@@ -19,9 +19,14 @@ export const verifyToken = ({
   token = '',
   signature = process.env.DEFAULT_SIGNATURE,
 } = {}) => {
-  // check if the payload is empty object
   if (!token) {
     return false
   }
-  const data = jwt.verify(token, signature)
+  try {
+    const data = jwt.verify(token, signature)
+    return data
+  } catch (error) {
+    console.error('Token verification failed:', error.message)
+    return false
+  }
 }
