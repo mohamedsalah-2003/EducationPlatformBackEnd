@@ -10,7 +10,7 @@ const verifyRequestToken = (req) => {
   const token = authHeader.split(" ")[1];
 
   try {
-    return jwt.verify(token, process.env.DEFAULT_SIGNATURE);
+    return jwt.verify(token, process.env.JWT_SECRET);
   } catch (error) {
     return null;
   }

@@ -52,7 +52,7 @@ export const SignIn = asyncHandler(async (req, res, next) => {
       score: isUserExists.score,
       role: isUserExists.role,
     },
-    process.env.JWT_SECRET || 'testToken'
+    process.env.JWT_SECRET ,
   );
 
   isUserExists.token = userToken;
