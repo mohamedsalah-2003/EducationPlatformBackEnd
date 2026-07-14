@@ -1,21 +1,33 @@
 import jwt from "jsonwebtoken";
 
-// export const checkAdmin = () => {
+const verifyRequestToken = (req) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    return jwt.verify(token, process.env.DEFAULT_SIGNATURE);
+  } catch (error) {
+    return null;
+  }
+};
 
 export const checkAdmin = () => {
   return async (req, res, next) => {
-    const authHeader = req.headers.authorization;
+    const decoded = verifyRequestToken(req);
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!decoded) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, "testToken");
 
     if (decoded.role !== "Admin") {
       return res.status(403).json({ message: "Access denied. Admins only." });
     }
+
     req.user = decoded;
     next();
   };
@@ -23,18 +35,16 @@ export const checkAdmin = () => {
 
 export const checkInstructor = () => {
   return async (req, res, next) => {
-    const authHeader = req.headers.authorization;
+    const decoded = verifyRequestToken(req);
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!decoded) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, "testToken");
 
     if (decoded.role !== "Instructor") {
       return res.status(403).json({ message: "Access denied. Instructors only." });
     }
+
     req.user = decoded;
     next();
   };
@@ -42,18 +52,16 @@ export const checkInstructor = () => {
 
 export const checkAdminOrInstructor = () => {
   return async (req, res, next) => {
-    const authHeader = req.headers.authorization;
+    const decoded = verifyRequestToken(req);
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!decoded) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, "testToken");
 
     if (decoded.role !== "Admin" && decoded.role !== "Instructor") {
       return res.status(403).json({ message: "Access denied. Admin or Instructor access required." });
     }
+
     req.user = decoded;
     next();
   };
