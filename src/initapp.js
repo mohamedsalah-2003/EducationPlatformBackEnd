@@ -29,26 +29,4 @@ app.use((err,req,res,next)=>{
   }
 })
 
-// Connect to MongoDB
-// mongoose.connect(process.env.DB_URL, {
-//   useNewUrlParser: true,
-//   useUnifiedTopology: true,
-//   serverSelectionTimeoutMS: 10000, // ⏱ مهلة الاتصال بالسيرفر 10 ثواني
-//   bufferCommands: false, // ❌ يمنع الانتظار أثناء الاتصال
-// })
-// .then(() => {
-//   console.log("✅ Connected to MongoDB");
-// })
-// .catch((error) => {
-//   console.error("❌ MongoDB Connection Error:", error);
-//   // لمنع التطبيق من الاستمرار في حالة فشل الاتصال
-//   process.exit(1);
-// });
-
-
-// Only start the server if we're not in a serverless environment
-// if (process.env.NODE_ENV !== 'production') {
-//   app.listen(port, () => console.log(`Server listening on port ${port}!`))
-// }
-
 }
