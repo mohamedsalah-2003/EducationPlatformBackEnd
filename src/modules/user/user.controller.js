@@ -94,7 +94,7 @@ export const updateProfile = asyncHandler(async (req, res, next) => {
         score: updatedUser.score,
         gender: updatedUser.gender,
       },
-      "testToken", // use your secret from environment variables in production
+      process.env.JWT_SECRET, // use your secret from environment variables in production
       { expiresIn: "7d" }
     );
 
