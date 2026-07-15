@@ -35,7 +35,12 @@ const courseSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Leason'
     }
-  ]
+  ],
+  finalTest: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FinalTest',
+    
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

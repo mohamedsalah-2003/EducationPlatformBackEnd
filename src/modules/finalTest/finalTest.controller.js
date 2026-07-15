@@ -6,7 +6,7 @@ import { courseModel } from "../../../connections/models/course.model.js";
 import { asyncHandler } from "../../utils/errorHandeling.js";
 import cloudinary from "../../utils/cloudinaryConfigration.js";
 import fs from 'fs';
- 
+
 
 export const createFinalTest = asyncHandler(async (req, res) => {
   try {
@@ -53,7 +53,8 @@ export const createFinalTest = asyncHandler(async (req, res) => {
         public_id: result.public_id
       }
     });
-
+    course.finalTest = finalTest._id;
+    await course.save();
     res.status(201).json({
       message: "Final test created successfully",
       finalTest
@@ -108,7 +109,7 @@ export const createFinalTestSubmission = asyncHandler(async (req, res) => {
     });
 
     // Check all lessons have submissions
-    if (submissions.length !== lessons.length ^ role!='User') {
+    if (submissions.length !== lessons.length ^ role != 'User') {
       return res.status(400).json({
         message: "You must submit and get grades for all course assignments before taking the final test",
       });

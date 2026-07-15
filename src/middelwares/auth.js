@@ -1,3 +1,4 @@
+import { userModel } from '../../connections/models/user.model.js';
 import { verifyToken } from '../utils/tokenFunction.js' // عدّل المسار حسب مكان الملف
 
 export const isAuth = () => {
