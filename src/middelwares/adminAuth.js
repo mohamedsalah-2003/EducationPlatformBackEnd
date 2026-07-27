@@ -1,68 +1,26 @@
-import jwt from "jsonwebtoken";
-
-const verifyRequestToken = (req) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  try {
-    return jwt.verify(token, process.env.JWT_SECRET);
-  } catch (error) {
-    return null;
-  }
-};
-
-export const checkAdmin = () => {
-  return async (req, res, next) => {
-    const decoded = verifyRequestToken(req);
-
-    if (!decoded) {
+const authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.authuser) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    if (decoded.role !== "Admin") {
-      return res.status(403).json({ message: "Access denied. Admins only." });
+    if (!allowedRoles.includes(req.authuser.role)) {
+      return res.status(403).json({
+        message: `Access denied. Required role: ${allowedRoles.join(" or ")}`,
+      });
     }
 
-    req.user = decoded;
-    next();
+    // Keep this alias temporarily for controllers that still read req.user.
+    req.user = req.authuser;
+    return next();
   };
 };
 
-export const checkInstructor = () => {
-  return async (req, res, next) => {
-    const decoded = verifyRequestToken(req);
+export const checkAdmin = () => authorizeRoles("Admin");
 
-    if (!decoded) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+export const checkInstructor = () => authorizeRoles("Instructor");
 
-    if (decoded.role !== "Instructor") {
-      return res.status(403).json({ message: "Access denied. Instructors only." });
-    }
+export const checkAdminOrInstructor = () =>
+  authorizeRoles("Admin", "Instructor");
 
-    req.user = decoded;
-    next();
-  };
-};
-
-export const checkAdminOrInstructor = () => {
-  return async (req, res, next) => {
-    const decoded = verifyRequestToken(req);
-
-    if (!decoded) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    if (decoded.role !== "Admin" && decoded.role !== "Instructor") {
-      return res.status(403).json({ message: "Access denied. Admin or Instructor access required." });
-    }
-
-    req.user = decoded;
-    next();
-  };
-};
+export const checkUser = () => authorizeRoles("User");

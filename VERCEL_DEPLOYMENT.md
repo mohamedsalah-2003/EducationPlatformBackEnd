@@ -61,6 +61,8 @@ git push origin main
    CLOUDINARY_API_SECRET=your_cloudinary_api_secret
    STRIPE_SECRET_KEY=your_stripe_secret_key
    STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
+   PUBLIC_API_URL=https://your-backend-domain.vercel.app
+   FRONTEND_URL=https://your-frontend-domain.vercel.app
    SALT_ROUNDS=10
    ORDER_TOKEN=your_order_token
    ```
@@ -108,6 +110,12 @@ git push origin main
 ### 3.4 Stripe Configuration
 - Get keys from Stripe dashboard
 - Use test keys for development, live keys for production
+- Register `https://your-backend-domain.vercel.app/order/webhook` as a Stripe
+  webhook endpoint.
+- Subscribe to `checkout.session.completed`,
+  `checkout.session.async_payment_succeeded`,
+  `checkout.session.async_payment_failed`, and `checkout.session.expired`.
+- Store the endpoint signing secret as `STRIPE_WEBHOOK_SECRET`.
 
 ## Step 4: Test Your Deployment
 
@@ -251,4 +259,4 @@ After successful deployment:
 2. **Configure monitoring** and alerting
 3. **Set up staging environment** for testing
 4. **Implement backup strategies**
-5. **Plan for scaling** as your application grows 
+5. **Plan for scaling** as your application grows

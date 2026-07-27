@@ -43,4 +43,6 @@ const submittedAssignmentSchema = new mongoose.Schema(
   }
 );
 
+submittedAssignmentSchema.index({ userId: 1, lessonId: 1 }, { unique: true });
+
 export const submittedAssignmentModel = mongoose.model('SubmittedAssignment', submittedAssignmentSchema);

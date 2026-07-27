@@ -3,6 +3,7 @@ import mongoose, { Schema } from 'mongoose'
 
 const userSchema = new Schema(
   {
+
     username: {
       type: String,
       required: true,
@@ -15,6 +16,7 @@ const userSchema = new Schema(
     password: {
       type: String,
       required: true,
+      select: false,
     },
     gender: {
       type: String,
@@ -22,23 +24,29 @@ const userSchema = new Schema(
       default: 'not specified',
     },
 
-    profile_pic: {secure_url:String,public_id:String},
+    profile_pic: { secure_url: String, public_id: String },
 
 
-  
-    role:{
+
+    role: {
       type: String,
-      default:'User',
-      enum:['User','Admin','Instructor']
-      
+      default: 'User',
+      enum: ['User', 'Admin', 'Instructor']
+
     },
-  
+
 
   },
   {
     timestamps: true,
   },
 )
-
+userSchema.set("toJSON", {
+  transform: (_, user) => {
+    delete user.password;
+    delete user.__v;
+    return user;
+  },
+});
 export const userModel = mongoose.model('User', userSchema)
 

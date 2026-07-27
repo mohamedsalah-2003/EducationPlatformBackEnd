@@ -6,6 +6,7 @@ import { courseModel } from "../../../connections/models/course.model.js";
 import { asyncHandler } from "../../utils/errorHandeling.js";
 import cloudinary from "../../utils/cloudinaryConfigration.js";
 import fs from 'fs';
+import { getManagedCourseIds } from "../../middelwares/courseAccess.js";
 
 
 export const createFinalTest = asyncHandler(async (req, res) => {
@@ -26,8 +27,9 @@ export const createFinalTest = asyncHandler(async (req, res) => {
 
     const existingTest = await finalTestModel.findOne({ courseId });
     if (existingTest) {
-      return res.status(400).json({
-        message: "A final test already exists for this course"
+      return res.status(409).json({
+        message: "A final test already exists for this course",
+        code: "FINAL_TEST_ALREADY_EXISTS",
       });
     }
 
@@ -62,6 +64,12 @@ export const createFinalTest = asyncHandler(async (req, res) => {
 
   } catch (err) {
     console.error(err);
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        message: "A final test already exists for this course",
+        code: "FINAL_TEST_ALREADY_EXISTS",
+      });
+    }
     res.status(500).json({
       message: "Upload failed",
       error: err.message
@@ -72,8 +80,6 @@ export const createFinalTest = asyncHandler(async (req, res) => {
 
 export const createFinalTestSubmission = asyncHandler(async (req, res) => {
   try {
-    const { role } = req.authuser;
-
     const { courseId } = req.params;
     const userId = req.authuser._id;
 
@@ -87,19 +93,27 @@ export const createFinalTestSubmission = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: "Final test not found for this course" });
     }
 
+    if (finalTest.dueDate && new Date() > finalTest.dueDate) {
+      return res.status(400).json({ message: "Final test deadline has passed" });
+    }
+
     // Prevent duplicate submission
     const existingSubmission = await submittedFinalTestModel.findOne({
       userId,
       finalTestId: finalTest._id,
     });
     if (existingSubmission) {
-      return res.status(400).json({
+      return res.status(409).json({
         message: "You have already submitted the final test for this course",
+        code: "FINAL_TEST_ALREADY_SUBMITTED",
       });
     }
 
-    // Get course lessons
-    const lessons = await leasonModel.find({ courseId });
+    // Only lessons that actually have assignments are prerequisites.
+    const lessons = await leasonModel.find({
+      courseId,
+      "assignment.filePath": { $exists: true, $ne: null },
+    });
     const lessonIds = lessons.map((lesson) => lesson._id);
 
     // Get assignment submissions for those lessons
@@ -109,7 +123,11 @@ export const createFinalTestSubmission = asyncHandler(async (req, res) => {
     });
 
     // Check all lessons have submissions
-    if (submissions.length !== lessons.length ^ role != 'User') {
+    const submittedLessonIds = new Set(
+      submissions.map((submission) => submission.lessonId.toString())
+    );
+
+    if (submittedLessonIds.size !== lessons.length) {
       return res.status(400).json({
         message: "You must submit and get grades for all course assignments before taking the final test",
       });
@@ -151,6 +169,12 @@ export const createFinalTestSubmission = asyncHandler(async (req, res) => {
 
   } catch (err) {
     console.error(err);
+    if (err?.code === 11000) {
+      return res.status(409).json({
+        message: "You have already submitted the final test for this course",
+        code: "FINAL_TEST_ALREADY_SUBMITTED",
+      });
+    }
     res.status(500).json({
       message: "Cloudinary upload error",
       error: err.message,
@@ -169,8 +193,18 @@ export const reviewAllFinalTestSubmissions = asyncHandler(
         .json({ message: "Unauthorized: Admin or Instructor access required" });
     }
 
+    const submissionFilter = {};
+
+    if (role === "Instructor") {
+      const courseIds = await getManagedCourseIds(req.authuser);
+      const finalTestIds = await finalTestModel.distinct("_id", {
+        courseId: { $in: courseIds },
+      });
+      submissionFilter.finalTestId = { $in: finalTestIds };
+    }
+
     const submissions = await submittedFinalTestModel
-      .find()
+      .find(submissionFilter)
       .populate({
         path: "userId",
         select: "username email",
@@ -223,16 +257,28 @@ export const gradeFinalTestSubmission = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ message: "Rating must be between 0 and 5" });
   }
 
-  const submission = await submittedFinalTestModel.findById(submissionId);
-  if (!submission) {
-    return res.status(404).json({ message: "Submission not found" });
-  }
+  const submission = await submittedFinalTestModel.findOneAndUpdate(
+    { _id: submissionId, status: { $ne: "graded" } },
+    {
+      $set: {
+        rating,
+        feedback: feedback || "",
+        status: "graded",
+        reviewerId: _id,
+      },
+    },
+    { new: true, runValidators: true }
+  );
 
-  submission.rating = rating;
-  if (feedback) submission.feedback = feedback;
-  submission.status = "graded";
-  submission.reviewerId = _id;
-  await submission.save();
+  if (!submission) {
+    const exists = await submittedFinalTestModel.exists({ _id: submissionId });
+    return res.status(exists ? 409 : 404).json({
+      message: exists
+        ? "This final test submission has already been graded"
+        : "Submission not found",
+      code: exists ? "SUBMISSION_ALREADY_GRADED" : "SUBMISSION_NOT_FOUND",
+    });
+  }
 
   // Get the updated submission with populated fields
   const updatedSubmission = await submittedFinalTestModel
@@ -290,7 +336,10 @@ export const getFinalTestFile = asyncHandler(async (req, res, next) => {
   }
 
   // Check if user submitted and all assignments graded
-  const lessons = await leasonModel.find({ courseId });
+  const lessons = await leasonModel.find({
+    courseId,
+    "assignment.filePath": { $exists: true, $ne: null },
+  });
   if (!lessons || lessons.length === 0) {
     return res.status(404).json({ message: "No lessons found for this course" });
   }
@@ -301,8 +350,12 @@ export const getFinalTestFile = asyncHandler(async (req, res, next) => {
     lessonId: { $in: lessonIds },
   });
 
-  if (submissions.length !== lessons.length) {
-    const remaining = lessons.length - submissions.length;
+  const submittedLessonIds = new Set(
+    submissions.map((submission) => submission.lessonId.toString())
+  );
+
+  if (submittedLessonIds.size !== lessons.length) {
+    const remaining = lessons.length - submittedLessonIds.size;
     return res.status(400).json({
       message: `You must submit all assignments. ${remaining} remaining.`,
     });

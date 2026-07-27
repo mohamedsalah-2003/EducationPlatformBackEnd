@@ -34,7 +34,6 @@ export const SignUpSchema = {
         'any.only': 'Gender must be either "male" or "female"',
       }),
 
-      role: joi.string().optional(),
     })
     .required(),
 };

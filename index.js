@@ -6,8 +6,9 @@ import connectDB from './connections/dbconnection.js'; // حسب مكان الم
 config();
 const startServer = async () => {
     await connectDB(); // ✅ اتصل قبل أي استخدام للـ Models
-    app.listen(process.env.port, () => {
-      console.log(`🚀 Server is running on ${process.env.port}`);
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => {
+      console.log(`🚀 Server is running on ${port}`);
     });
   };
   

@@ -6,16 +6,37 @@ import {  validationCoreFunction } from '../../middelwares/validation.js'
 import { SignInSchema, SignUpSchema } from './user.validationSchema.js'
 import { multercloudFunction } from '../../services/multerCloudenary.js'
 import { allowedExtensions } from '../../utils/allowedExtentions.js'
+import { preventConcurrentRequests } from '../../middelwares/preventConcurrentRequests.js'
 
 
 
-router.post('/',validationCoreFunction(SignUpSchema),ur.SignUp)
+router.post(
+  '/',
+  validationCoreFunction(SignUpSchema),
+  preventConcurrentRequests({
+    operation: 'user-signup',
+    key: (req) => req.body.email,
+    message: 'This account is already being created',
+  }),
+  ur.SignUp
+)
 router.post('/login',validationCoreFunction(SignInSchema), ur.SignIn)
-router.patch('/', isAuth(),ur.updateProfile)   //update only one
+router.patch('/', isAuth(), preventConcurrentRequests({
+  operation: 'profile-update',
+  key: (req) => req.authuser._id,
+}), ur.updateProfile)   //update only one
 router.get('/', isAuth(),ur.getUserProfile)
-router.post('/profile',isAuth(),multercloudFunction(allowedExtensions.Image).single('profile'),ur.uploudProfilePic)
+router.post('/profile',isAuth(), preventConcurrentRequests({
+  operation: 'profile-picture',
+  key: (req) => req.authuser._id,
+  message: 'A profile picture upload is already in progress',
+}), multercloudFunction(allowedExtensions.Image).single('profile'),ur.uploudProfilePic)
 
 router.get('/allUsers',isAuth(),ur.getallusers)
-router.delete('/deleteUser', isAuth(), ur.deleteUserByAdmin);
+router.delete('/deleteUser', isAuth(), preventConcurrentRequests({
+  operation: 'user-delete',
+  key: (req) => req.body.userId,
+  message: 'This user is already being deleted',
+}), ur.deleteUserByAdmin);
 
 export default router

@@ -2,9 +2,11 @@ import cors from "cors"
 import {userRouter,course,cart,order, leason} from "./allroutes.js"
 import submittedAssignmentRoutes from "./modules/submittedAssignment/submittedAssignment.routes.js"
 import finalTestRoutes from "./modules/finalTest/finalTest.routes.js"
+import { orderWebhookRouter } from "./modules/order/order.routes.js"
 
 export const initapp = (app, express)=>{
     const port =  process.env.PORT || 3000
+app.use('/order/webhook', orderWebhookRouter)
 app.use(express.json())
 app.use(cors())
 app.use('/user', userRouter)

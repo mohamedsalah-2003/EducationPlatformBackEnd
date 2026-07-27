@@ -45,8 +45,54 @@ const orderSchema = new mongoose.Schema(
       required: true,
       enum: ["cash", "card"],
     },
+    status: {
+      type: String,
+      required: true,
+      enum: [
+        "pending",
+        "awaiting_payment",
+        "completed",
+        "cancelled",
+        "payment_failed",
+      ],
+      default: "completed",
+      index: true,
+    },
+    paymentStatus: {
+      type: String,
+      required: true,
+      enum: ["not_required", "pending", "paid", "cancelled", "failed"],
+      default: "not_required",
+    },
+    cartId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "cart",
+    },
+    enrollmentAttemptId: {
+      type: String,
+    },
+    stripeSessionId: {
+      type: String,
+    },
+    stripePaymentIntentId: {
+      type: String,
+    },
+    checkoutExpiresAt: {
+      type: Date,
+    },
+    paidAt: {
+      type: Date,
+    },
   },
   { timestamps: true }
+);
+
+orderSchema.index(
+  { stripeSessionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { stripeSessionId: { $type: "string" } },
+  }
 );
 
 export const orderModel = mongoose.model("Order", orderSchema);

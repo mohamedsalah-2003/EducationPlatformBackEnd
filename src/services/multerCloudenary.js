@@ -15,11 +15,16 @@ export const multercloudFunction = (allowedExtensionsArr) => {
     cb(new Error('invalid extension', { cause: 400 }), false)
   }
 
+  const acceptsVideo = allowedExtensionsArr.some((type) => type.startsWith('video/'));
+  const maxFileSize = acceptsVideo
+    ? 500 * 1024 * 1024
+    : 10 * 1024 * 1024;
+
   const fileUpload = multer({
     fileFilter,
     storage,
     limits: {
-      fileSize: 1000 * 1024 * 1024 // max 100MB
+      fileSize: maxFileSize
     }
   })
 

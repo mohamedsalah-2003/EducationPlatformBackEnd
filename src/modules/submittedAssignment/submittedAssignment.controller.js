@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import cloudinary from '../../utils/cloudinaryConfigration.js';
 import axios from 'axios';
+import { getManagedCourseIds } from '../../middelwares/courseAccess.js';
 import https from 'https'; // ضروري علشان نعمل request للملف من Cloudinary
 
 
@@ -47,6 +48,31 @@ export const createSubmission = asyncHandler(async (req, res, next) => {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
+
+      const lesson = req.lesson || await leasonModel.findById(lessonId);
+      if (!lesson) {
+        return res.status(404).json({ message: "Lesson not found" });
+      }
+
+      if (!lesson.assignment?.filePath) {
+        return res.status(400).json({ message: "This lesson has no assignment" });
+      }
+
+      if (lesson.assignment.dueDate && new Date() > lesson.assignment.dueDate) {
+        return res.status(400).json({ message: "Assignment deadline has passed" });
+      }
+
+      const existingSubmission = await submittedAssignmentModel.exists({
+        userId,
+        lessonId,
+      });
+
+      if (existingSubmission) {
+        return res.status(409).json({
+          message: "You have already submitted this assignment",
+          code: "ASSIGNMENT_ALREADY_SUBMITTED",
+        });
+      }
   
       // Upload file to Cloudinary
       let cloudinaryResult;
@@ -77,14 +103,19 @@ export const createSubmission = asyncHandler(async (req, res, next) => {
       });
   
       // Add this block to update the lesson's submissions array
-      await leasonModel.findByIdAndUpdate(
-        lessonId,
-        { $push: { submissions: submission._id } }
-      );
+      await leasonModel.findByIdAndUpdate(lessonId, {
+        $addToSet: { submissions: submission._id },
+      });
   
       res.status(201).json({ message: 'Submission created successfully', submission });
     } catch (error) {
       console.error('Error creating submission:', error);
+      if (error?.code === 11000) {
+        return res.status(409).json({
+          message: 'You have already submitted this assignment',
+          code: 'ASSIGNMENT_ALREADY_SUBMITTED',
+        });
+      }
       res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
   });
@@ -98,7 +129,17 @@ export const reviewAllSubmissions = asyncHandler(async (req, res, next) => {
     return res.status(403).json({ message: 'Unauthorized: Admin or Instructor access required' });
   }
 
-  const submissions = await submittedAssignmentModel.find()
+  const submissionFilter = {};
+
+  if (role === 'Instructor') {
+    const courseIds = await getManagedCourseIds(req.authuser);
+    const lessonIds = await leasonModel.distinct('_id', {
+      courseId: { $in: courseIds },
+    });
+    submissionFilter.lessonId = { $in: lessonIds };
+  }
+
+  const submissions = await submittedAssignmentModel.find(submissionFilter)
     .populate({
       path: 'userId',
       select: 'username email'
@@ -139,16 +180,26 @@ export const gradeSubmission = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ message: 'Rating must be between 0 and 5' });
   }
 
-  const submission = await submittedAssignmentModel.findById(submissionId);
-  if (!submission) {
-    return res.status(404).json({ message: 'Submission not found' });
-  }
+  const submission = await submittedAssignmentModel.findOneAndUpdate(
+    { _id: submissionId, status: { $ne: 'graded' } },
+    {
+      $set: {
+        rating,
+        feedback: feedback || '',
+        status: 'graded',
+        reviewerId: _id,
+      },
+    },
+    { new: true, runValidators: true }
+  );
 
-  submission.rating = rating;
-  if (feedback) submission.feedback = feedback;
-  submission.status = 'graded';
-  submission.reviewerId = _id;
-  await submission.save();
+  if (!submission) {
+    const exists = await submittedAssignmentModel.exists({ _id: submissionId });
+    return res.status(exists ? 409 : 404).json({
+      message: exists ? 'This submission has already been graded' : 'Submission not found',
+      code: exists ? 'SUBMISSION_ALREADY_GRADED' : 'SUBMISSION_NOT_FOUND',
+    });
+  }
 
   // Get the updated submission with populated fields
   const updatedSubmission = await submittedAssignmentModel.findById(submissionId)

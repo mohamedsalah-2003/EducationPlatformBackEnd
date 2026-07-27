@@ -36,4 +36,9 @@ const leasonSchema = new mongoose.Schema(
   }
 );
 
+leasonSchema.index(
+  { courseId: 1, title: 1 },
+  { unique: true, collation: { locale: 'en', strength: 2 } }
+);
+
 export const leasonModel = mongoose.model('Leason', leasonSchema);

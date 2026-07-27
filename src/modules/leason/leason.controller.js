@@ -21,11 +21,22 @@ export const addleason = asyncHandler(async (req, res, next) => {
     return res.status(400).json({ message: "Invalid course ID" });
   }
 
-  const leason = await leasonModel.create({
-    title: LessonTitle,
-    description: LessonDescription,
-    courseId,
-  });
+  let leason;
+  try {
+    leason = await leasonModel.create({
+      title: LessonTitle,
+      description: LessonDescription,
+      courseId,
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        message: "A lesson with this title already exists in the course",
+        code: "LESSON_ALREADY_EXISTS",
+      });
+    }
+    return next(error);
+  }
 
   courseCheck.lessons.push(leason._id);
   await courseCheck.save();
@@ -34,30 +45,33 @@ export const addleason = asyncHandler(async (req, res, next) => {
 });
 
 // Get all lessons for a specific course
-export const getLessonsByCourse = asyncHandler(async (req, res, next) => {
+export const getLessonsByCourse = asyncHandler(async (req, res) => {
   const { courseId } = req.params;
-  const userId = req.authuser._id; // Get the authenticated user's ID
+  const { _id: userId } = req.authuser;
 
   const course = await courseModel.findById(courseId);
+
   if (!course) {
-    return res.status(404).json({ message: "Course not found" });
+    return res.status(404).json({
+      message: "Course not found",
+    });
   }
 
-  const courselessons = await leasonModel
+  const courseLessons = await leasonModel
     .find({ courseId })
     .select("title description video assignment submissions")
     .populate({
       path: "submissions",
-      match: { userId: userId }, // Only populate submissions for the current user
+      match: { userId },
     });
 
-  res.status(200).json({
+  return res.status(200).json({
     message: "Lessons retrieved successfully",
     courseName: course.title,
     courseId: course._id,
     courseImage: course.imageurl,
     courseDescription: course.description,
-    courselessons,
+    courselessons: courseLessons,
   });
 });
 
@@ -243,7 +257,9 @@ export const gradeAssignment = asyncHandler(async (req, res, next) => {
 
 export const downloadAssignment = asyncHandler(async (req, res, next) => {
   const { lessonId } = req.params;
-  const lesson = await leasonModel.findById(lessonId);
+  const lesson = await leasonModel
+    .findById(lessonId)
+    .select("assignment courseId");
 
   if (!lesson || !lesson.assignment || !lesson.assignment.filePath) {
     return res.status(404).json({ message: "Assignment PDF not found" });

@@ -15,6 +15,12 @@ const courseSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  instructorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true
+  },
   imageurl: {
     secure_url: String,
     public_id: String
@@ -46,6 +52,11 @@ const courseSchema = new mongoose.Schema({
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
+
+courseSchema.index(
+  { title: 1 },
+  { unique: true, collation: { locale: 'en', strength: 2 } }
+);
 
 // Virtual populate for schedules
 courseSchema.virtual('scheduleRefs', {
