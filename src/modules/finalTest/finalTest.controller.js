@@ -7,6 +7,7 @@ import { asyncHandler } from "../../utils/errorHandeling.js";
 import cloudinary from "../../utils/cloudinaryConfigration.js";
 import fs from 'fs';
 import { getManagedCourseIds } from "../../middelwares/courseAccess.js";
+import { findStudentFinalTestFeedback } from "../../services/studentFeedback.js";
 
 
 export const createFinalTest = asyncHandler(async (req, res) => {
@@ -55,8 +56,6 @@ export const createFinalTest = asyncHandler(async (req, res) => {
         public_id: result.public_id
       }
     });
-    course.finalTest = finalTest._id;
-    await course.save();
     res.status(201).json({
       message: "Final test created successfully",
       finalTest
@@ -438,26 +437,10 @@ export const downloadStudentSubmission = asyncHandler(async (req, res, next) => 
 
 export const getStudentFinalTestFeedback = async (req, res) => {
   try {
-    const userId = req.authuser;
-
     // Find all final test submissions for this student with proper population
-    const submissions = await submittedFinalTestModel
-      .find({
-        userId,
-      })
-      .populate("userId", "username email")
-      .populate({
-        path: "reviewerId",
-        select: "username email",
-      })
-      .populate({
-        path: "finalTestId",
-        select: "courseId",
-        populate: {
-          path: "courseId",
-          select: "title ",
-        },
-      });
+    const submissions = await findStudentFinalTestFeedback({
+      authUser: req.authuser,
+    });
 
     if (!submissions || submissions.length === 0) {
       return res.status(404).json({
@@ -469,12 +452,9 @@ export const getStudentFinalTestFeedback = async (req, res) => {
     return res.status(200).json({
       message: "Final test feedbacks retrieved successfully",
       submissions: submissions.map((submission) => {
-        // Log the submission for debugging
-        console.log("Raw submission:", submission);
-
         const submissionData = {
           id: submission._id,
-          studentName: submission.userId?.name || "Unknown",
+          studentName: submission.userId?.username || "Unknown",
           studentEmail: submission.userId?.email || "Unknown",
           courseName:
             submission.finalTestId?.courseId?.title || "Unknown Course",
@@ -487,7 +467,7 @@ export const getStudentFinalTestFeedback = async (req, res) => {
 
         // Only include rating and feedback if the submission is graded
         if (submission.status === "graded") {
-          submissionData.rating = submission.rating || "No Rating";
+          submissionData.rating = submission.rating ?? "No Rating";
           submissionData.feedback =
             submission.feedback || "No feedback provided";
         } else {

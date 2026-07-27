@@ -6,6 +6,7 @@ import path from 'path';
 import cloudinary from '../../utils/cloudinaryConfigration.js';
 import axios from 'axios';
 import { getManagedCourseIds } from '../../middelwares/courseAccess.js';
+import { findStudentAssignmentFeedback } from '../../services/studentFeedback.js';
 import https from 'https'; // ضروري علشان نعمل request للملف من Cloudinary
 
 
@@ -268,24 +269,10 @@ export const downloadSubmission = asyncHandler(async (req, res) => {
 
 export const getStudentAssignmentSubmissions = async (req, res) => {
   try {
-    const userId = req.authuser;
-
     // Find all assignment submissions for this student with proper population
-    const submissions = await submittedAssignmentModel.find({
-      userId
-    }).populate('userId', 'name email')
-      .populate({
-        path: 'reviewerId',
-        select: 'username email'
-      })
-      .populate({
-        path: 'lessonId',
-        select: 'title courseId',
-        populate: {
-          path: 'courseId',
-          select: 'title'
-        }
-      });
+    const submissions = await findStudentAssignmentFeedback({
+      authUser: req.authuser,
+    });
 
     if (!submissions || submissions.length === 0) {
       return res.status(404).json({
@@ -310,7 +297,7 @@ export const getStudentAssignmentSubmissions = async (req, res) => {
 
         // Only include mark, rating and feedback if the submission is graded
         if (submission.status === 'graded') {
-          submissionData.rating = submission.rating || 'No Rating';
+          submissionData.rating = submission.rating ?? 'No Rating';
           submissionData.feedback = submission.feedback || 'No feedback provided';
         } else {
      

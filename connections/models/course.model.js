@@ -35,34 +35,14 @@ const courseSchema = new mongoose.Schema({
       type: String,
       required: true
     }
-  }],
-  lessons: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Leason'
-    }
-  ],
-  finalTest: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'FinalTest',
-    
-  }
+  }]
 }, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  timestamps: true
 });
 
 courseSchema.index(
   { title: 1 },
   { unique: true, collation: { locale: 'en', strength: 2 } }
 );
-
-// Virtual populate for schedules
-courseSchema.virtual('scheduleRefs', {
-  ref: 'Schedule',
-  localField: '_id',
-  foreignField: 'courseId'
-});
 
 export const courseModel = mongoose.model('Course', courseSchema); // ✅ تأكد الاسم هو "Course"

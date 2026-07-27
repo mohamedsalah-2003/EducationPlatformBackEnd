@@ -4,7 +4,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node test/orderPayment.service.test.js",
+    "test": "node test/run-tests.js",
+    "migrate:course-relations:check": "node scripts/migrate-course-relations.js",
+    "migrate:course-relations": "node scripts/migrate-course-relations.js --apply",
     "start": "node index.js",
     "dev": "nodemon index.js",
     "build": "echo 'Build completed'"

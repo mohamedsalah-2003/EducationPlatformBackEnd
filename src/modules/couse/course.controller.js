@@ -61,23 +61,9 @@ export const addCourse = asyncHandler(async (req, res, next) => {
     return next(error);
   }
 
-  // Also create separate schedule documents for reference
-  await Promise.all(
-    schedules.map(schedule => 
-      scheduleModel.create({
-        day: schedule.day,
-        time: schedule.time,
-        courseId: course._id
-      })
-    )
-  );
-
-  // Fetch the course with populated schedule references
-  const populatedCourse = await courseModel.findById(course._id).populate('scheduleRefs');
-
   res.status(201).json({
     message: "Course added successfully",
-    course: populatedCourse,
+    course,
     courseId: course._id
   });
 });
@@ -114,7 +100,6 @@ export const uploadCoursePic = asyncHandler(async (req, res, next) => {
 export const getCourses = asyncHandler(async (req, res) => {
   const courses = await courseModel
     .find({})
-    .populate('scheduleRefs')
     .populate('instructorId', 'username');
   res.json(courses);
 });

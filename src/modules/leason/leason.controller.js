@@ -38,9 +38,6 @@ export const addleason = asyncHandler(async (req, res, next) => {
     return next(error);
   }
 
-  courseCheck.lessons.push(leason._id);
-  await courseCheck.save();
-
   res.status(201).json({ message: "Lesson added successfully", leason });
 });
 
