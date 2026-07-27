@@ -22,21 +22,78 @@ import {
 const enrollmentLockId = (userId, courseId) => `${userId}:${courseId}`;
 const stripeSessionPlaceholder = "{CHECKOUT_SESSION_ID}";
 
-const getPublicApiUrl = (req) => {
-  const configuredUrl = process.env.PUBLIC_API_URL?.trim();
-  if (configuredUrl) return configuredUrl.replace(/\/+$/, "");
+const normalizeHttpOrigin = (value, { allowLocalhost = false } = {}) => {
+  if (!value) return "";
 
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("PUBLIC_API_URL must be configured for card checkout");
+  try {
+    const url = new URL(value.includes("://") ? value : `https://${value}`);
+    const isLocalhost = ["localhost", "127.0.0.1"].includes(url.hostname);
+    const validProtocol =
+      url.protocol === "https:" ||
+      (allowLocalhost && isLocalhost && url.protocol === "http:");
+
+    return validProtocol ? url.origin : "";
+  } catch {
+    return "";
   }
-
-  return `${req.protocol}://${req.get("host")}`;
 };
 
-const redirectToFrontend = ({ res, path, params = {} }) => {
-  const configuredFrontendUrl = process.env.FRONTEND_URL?.trim();
+const getPublicApiUrl = (req) => {
+  const allowLocalhost = process.env.NODE_ENV !== "production";
+  const configuredUrl = normalizeHttpOrigin(
+    process.env.PUBLIC_API_URL?.trim(),
+    { allowLocalhost }
+  );
+  if (configuredUrl) return configuredUrl;
+
+  const vercelUrl = normalizeHttpOrigin(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+      process.env.VERCEL_URL
+  );
+  if (vercelUrl) return vercelUrl;
+
+  const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const forwardedHost =
+    req.get("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host");
+  const requestUrl = normalizeHttpOrigin(
+    `${forwardedProtocol || req.protocol}://${forwardedHost}`,
+    { allowLocalhost }
+  );
+  if (requestUrl) return requestUrl;
+
+  throw new Error("Could not determine the public API URL for card checkout");
+};
+
+const getFrontendReturnUrl = (req) => {
+  const configuredUrl = normalizeHttpOrigin(
+    process.env.FRONTEND_URL?.trim(),
+    { allowLocalhost: process.env.NODE_ENV !== "production" }
+  );
+  if (configuredUrl) return configuredUrl;
+
+  const requestOrigin = normalizeHttpOrigin(req.get("origin"), {
+    allowLocalhost: process.env.NODE_ENV !== "production",
+  });
+  if (requestOrigin) return requestOrigin;
+
+  return process.env.NODE_ENV !== "production"
+    ? "http://localhost:4200"
+    : "";
+};
+
+const redirectToFrontend = ({
+  res,
+  path,
+  params = {},
+  checkoutSession,
+}) => {
   const frontendUrl =
-    configuredFrontendUrl ||
+    normalizeHttpOrigin(process.env.FRONTEND_URL?.trim(), {
+      allowLocalhost: process.env.NODE_ENV !== "production",
+    }) ||
+    normalizeHttpOrigin(checkoutSession?.metadata?.frontendUrl, {
+      allowLocalhost: process.env.NODE_ENV !== "production",
+    }) ||
     (process.env.NODE_ENV !== "production" ? "http://localhost:4200" : "");
 
   if (!frontendUrl) return false;
@@ -162,11 +219,15 @@ export const createOrderFromCart = asyncHandler(async (req, res, next) => {
       }
 
       const publicApiUrl = getPublicApiUrl(req);
+      const frontendReturnUrl = getFrontendReturnUrl(req);
       const orderSession = await paymentFunction({
         customer_email: user.email,
         metadata: {
           orderId: newOrder._id.toString(),
           userId: userId.toString(),
+          ...(frontendReturnUrl
+            ? { frontendUrl: frontendReturnUrl }
+            : {}),
         },
         success_url:
           `${publicApiUrl}/order/payment/success` +
@@ -307,6 +368,7 @@ export const paymentSuccess = asyncHandler(async (req, res, next) => {
           res,
           path: "Cart",
           params: { payment: "pending" },
+          checkoutSession,
         })
       ) {
         return;
@@ -330,6 +392,7 @@ export const paymentSuccess = asyncHandler(async (req, res, next) => {
           payment: "success",
           orderId: order._id,
         },
+        checkoutSession,
       })
     ) {
       return;
@@ -380,6 +443,7 @@ export const paymentCancel = asyncHandler(async (req, res, next) => {
           payment: "cancelled",
           orderId: order._id,
         },
+        checkoutSession,
       })
     ) {
       return;
