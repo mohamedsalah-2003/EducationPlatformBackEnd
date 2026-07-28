@@ -46,7 +46,7 @@ git push origin main
    - **Root Directory**: `./` (leave as default)
    - **Build Command**: `npm run build` (or leave empty)
    - **Output Directory**: `./` (leave as default)
-   - **Install Command**: `npm install`
+   - **Install Command**: `npm ci`
 
 4. **Set Environment Variables**
    - Click "Environment Variables"
@@ -67,8 +67,7 @@ git push origin main
    API_RATE_LIMIT_SECRET=generate_a_long_random_rate_limit_secret
    API_RATE_LIMIT_WINDOW_MINUTES=15
    API_RATE_LIMIT_MAX_REQUESTS=300
-   SALT_ROUNDS=10
-   ORDER_TOKEN=your_order_token
+   SALT_ROUNDS=12
    ```
 
 5. **Deploy**
@@ -104,8 +103,15 @@ git push origin main
 - Format: `mongodb+srv://username:password@cluster.mongodb.net/database`
 
 ### 3.2 JWT Secret
-- Generate a strong secret key
-- Example: `your-super-secret-jwt-key-2024`
+- Generate a cryptographically random secret of at least 32 characters.
+- Run:
+
+  ```sh
+  node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+  ```
+
+- Store the result in Vercel as `JWT_SECRET`; never place the generated value
+  in Git.
 
 ### 3.3 Cloudinary Configuration
 - Get credentials from Cloudinary dashboard
