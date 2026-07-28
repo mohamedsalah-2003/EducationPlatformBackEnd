@@ -5,17 +5,19 @@ import * as cart from './cart.controller.js'
 import { isAuth } from '../../middelwares/auth.js'
 import { checkUser } from '../../middelwares/adminAuth.js'
 import { preventConcurrentRequests } from '../../middelwares/preventConcurrentRequests.js'
+import { validationCoreFunction } from '../../middelwares/validation.js'
+import { mutationSchemas } from '../../validation/apiSchemas.js'
 
 router.get('/getCart', isAuth(), checkUser(), cart.getCart);
-router.post('/addToCart', isAuth(), checkUser(), preventConcurrentRequests({
+router.post('/addToCart', isAuth(), checkUser(), validationCoreFunction(mutationSchemas.cartAdd), preventConcurrentRequests({
   operation: 'cart-add',
   key: (req) => `${req.authuser._id}:${req.body.courseId}`,
 }), cart.addToCart)
-router.delete('/course', isAuth(), checkUser(), preventConcurrentRequests({
+router.delete('/course', isAuth(), checkUser(), validationCoreFunction(mutationSchemas.cartCourse), preventConcurrentRequests({
   operation: 'cart-remove',
   key: (req) => `${req.authuser._id}:${req.body.courseId}`,
 }), cart.deleteCourseFromCart)
-router.delete('/clear', isAuth(), checkUser(), preventConcurrentRequests({
+router.delete('/clear', isAuth(), checkUser(), validationCoreFunction(mutationSchemas.empty), preventConcurrentRequests({
   operation: 'cart-clear',
   key: (req) => req.authuser._id,
 }), cart.clearCart);

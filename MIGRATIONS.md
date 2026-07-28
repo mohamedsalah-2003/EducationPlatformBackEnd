@@ -5,9 +5,12 @@ The application now keeps each course relationship in one place:
 - schedules are embedded in `Course.schedules`;
 - lessons reference their course through `Lesson.courseId`;
 - final tests reference their course through `FinalTest.courseId`.
+- assignment submissions reference their lesson through
+  `SubmittedAssignment.lessonId`.
 
 Existing databases may still contain the retired `Course.lessons`,
 `Course.finalTest`, and separate `Schedule` records.
+Lesson documents may also contain retired `Lesson.submissions` arrays.
 
 ## Run the migration
 

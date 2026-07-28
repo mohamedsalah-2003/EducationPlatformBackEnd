@@ -1,23 +1,30 @@
-import mongoose from 'mongoose'
+import mongoose from 'mongoose';
+import { logInfo } from '../src/utils/logger.js';
 
-// export const connectionDB = async () => {
-//   return await mongoose
-//     .connect("mongodb://localhost:27017/grad-projecte")
-//     .then((res) => console.log('DB connection success'))
-//     .catch((err) => console.log('DB connection Fail', err))
-// } 
+let connectionPromise;
 
 const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.DB_URL, {
-      serverSelectionTimeoutMS: 10000,
-      dbName: 'educationPlatform',
-    });
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
 
-    console.log("✅ Connected to MongoDB");
-  } catch (error) {
-    console.error("❌ MongoDB Connection Error:", error);
-    process.exit(1);
+  if (!connectionPromise) {
+    connectionPromise = mongoose
+      .connect(process.env.DB_URL, {
+        serverSelectionTimeoutMS: 10000,
+        dbName: process.env.DB_NAME || 'educationPlatform',
+      })
+      .then(() => {
+        logInfo('database_connected', {
+          database: mongoose.connection.name,
+        });
+        return mongoose.connection;
+      })
+      .catch((error) => {
+        connectionPromise = undefined;
+        throw error;
+      });
   }
+
+  return connectionPromise;
 };
-export default connectDB
+
+export default connectDB;

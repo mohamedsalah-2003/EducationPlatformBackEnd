@@ -1,6 +1,6 @@
 export const allowedExtensions = {
     Image: ['image/png', 'image/jpeg', 'image/gif', 'image/jpg'],
-    Files: ['application/pdf', 'application/javascript'],
+    Files: ['application/pdf'],
     Videos: [
       'video/mp4',
       'video/mpeg',
@@ -12,4 +12,3 @@ export const allowedExtensions = {
       'video/x-ms-wmv'
     ]
   };
-  

@@ -1,28 +1,59 @@
 import { userModel } from '../../connections/models/user.model.js';
+import { isTokenRevoked } from '../services/tokenRevocation.js';
+import { AppError, asyncHandler } from '../utils/errorHandeling.js';
 import { verifyToken } from '../utils/tokenFunction.js' // عدّل المسار حسب مكان الملف
 
 export const isAuth = () => {
-  return async (req, res, next) => {
+  return asyncHandler(async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(400).json({ message: "Please send a valid token in the Authorization header" });
+      throw new AppError(
+        "Authentication is required",
+        401,
+        "AUTHENTICATION_REQUIRED"
+      );
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.slice("Bearer ".length).trim();
     const decodedData = verifyToken({ token });
 
-    if (!decodedData || !decodedData._id) {
-      return res.status(400).json({ message: "Invalid or expired token" });
+    if (
+      !decodedData?._id ||
+      !decodedData.jti ||
+      !Number.isInteger(decodedData.tokenVersion)
+    ) {
+      throw new AppError(
+        "Invalid or expired token",
+        401,
+        "INVALID_TOKEN"
+      );
     }
 
-    const findUser = await userModel.findById(decodedData._id);
+    const [findUser, revoked] = await Promise.all([
+      userModel.findById(decodedData._id),
+      isTokenRevoked({ jwtId: decodedData.jti }),
+    ]);
 
     if (!findUser) {
-      return res.status(400).json({ message: "Please sign up first" });
+      throw new AppError(
+        "Invalid or expired token",
+        401,
+        "INVALID_TOKEN"
+      );
+    }
+
+    if (revoked || (findUser.tokenVersion ?? 0) !== decodedData.tokenVersion) {
+      throw new AppError(
+        "This session is no longer valid",
+        401,
+        "TOKEN_REVOKED"
+      );
     }
 
     req.authuser = findUser;
-    next();
-  };
+    req.authToken = decodedData;
+    req.accessToken = token;
+    return next();
+  });
 };

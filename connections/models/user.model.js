@@ -34,6 +34,11 @@ const userSchema = new Schema(
       enum: ['User', 'Admin', 'Instructor']
 
     },
+    tokenVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
 
 
   },
@@ -44,6 +49,7 @@ const userSchema = new Schema(
 userSchema.set("toJSON", {
   transform: (_, user) => {
     delete user.password;
+    delete user.tokenVersion;
     delete user.__v;
     return user;
   },

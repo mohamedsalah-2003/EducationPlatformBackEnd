@@ -5,12 +5,17 @@ import { leasonModel } from "../../../connections/models/leason.model.js";
 import { courseModel } from "../../../connections/models/course.model.js";
 import { asyncHandler } from "../../utils/errorHandeling.js";
 import cloudinary from "../../utils/cloudinaryConfigration.js";
-import fs from 'fs';
 import { getManagedCourseIds } from "../../middelwares/courseAccess.js";
 import { findStudentFinalTestFeedback } from "../../services/studentFeedback.js";
+import { removeUploadedFile } from "../../utils/uploadCleanup.js";
+import {
+  getPagination,
+  getPaginationMetadata,
+} from "../../utils/pagination.js";
+import { logError } from "../../utils/logger.js";
 
 
-export const createFinalTest = asyncHandler(async (req, res) => {
+export const createFinalTest = asyncHandler(async (req, res, next) => {
   try {
     const { role } = req.authuser;
     const { courseId } = req.params;
@@ -45,9 +50,6 @@ export const createFinalTest = asyncHandler(async (req, res) => {
       format: "pdf"
     });
 
-    // Delete local file
-    fs.unlinkSync(req.file.path);
-
     // Save to DB
     const finalTest = await finalTestModel.create({
       courseId,
@@ -56,28 +58,30 @@ export const createFinalTest = asyncHandler(async (req, res) => {
         public_id: result.public_id
       }
     });
-    res.status(201).json({
+    return res.status(201).json({
       message: "Final test created successfully",
       finalTest
     });
 
   } catch (err) {
-    console.error(err);
+    logError("final_test_creation_failed", err, {
+      requestId: req.requestId,
+      courseId: req.params.courseId,
+    });
     if (err?.code === 11000) {
       return res.status(409).json({
         message: "A final test already exists for this course",
         code: "FINAL_TEST_ALREADY_EXISTS",
       });
     }
-    res.status(500).json({
-      message: "Upload failed",
-      error: err.message
-    });
+    return next(err);
+  } finally {
+    await removeUploadedFile(req.file);
   }
 });
 
 
-export const createFinalTestSubmission = asyncHandler(async (req, res) => {
+export const createFinalTestSubmission = asyncHandler(async (req, res, next) => {
   try {
     const { courseId } = req.params;
     const userId = req.authuser._id;
@@ -147,9 +151,6 @@ export const createFinalTestSubmission = asyncHandler(async (req, res) => {
       format: "pdf",
     });
 
-    // Delete local file
-    fs.unlinkSync(req.file.path);
-
     // Save submission in DB
     const submission = await submittedFinalTestModel.create({
       userId,
@@ -161,23 +162,25 @@ export const createFinalTestSubmission = asyncHandler(async (req, res) => {
       submittedAt: new Date(),
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Final test submission created successfully",
       submission,
     });
 
   } catch (err) {
-    console.error(err);
+    logError("final_test_submission_failed", err, {
+      requestId: req.requestId,
+      courseId: req.params.courseId,
+    });
     if (err?.code === 11000) {
       return res.status(409).json({
         message: "You have already submitted the final test for this course",
         code: "FINAL_TEST_ALREADY_SUBMITTED",
       });
     }
-    res.status(500).json({
-      message: "Cloudinary upload error",
-      error: err.message,
-    });
+    return next(err);
+  } finally {
+    await removeUploadedFile(req.file);
   }
 });
 
@@ -202,26 +205,34 @@ export const reviewAllFinalTestSubmissions = asyncHandler(
       submissionFilter.finalTestId = { $in: finalTestIds };
     }
 
-    const submissions = await submittedFinalTestModel
-      .find(submissionFilter)
-      .populate({
-        path: "userId",
-        select: "username email",
-      })
-      .populate({
-        path: "reviewerId",
-        select: "username email",
-      })
-      .populate({
-        path: "finalTestId",
-        select: "courseId dueDate",
-        populate: {
-          path: "courseId",
-          select: "title imageurl",
-        },
-      });
+    const { page, limit, skip } = getPagination(req.query);
+    const [submissions, total] = await Promise.all([
+      submittedFinalTestModel
+        .find(submissionFilter)
+        .sort({ submittedAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate({
+          path: "userId",
+          select: "username email",
+        })
+        .populate({
+          path: "reviewerId",
+          select: "username email",
+        })
+        .populate({
+          path: "finalTestId",
+          select: "courseId dueDate",
+          populate: {
+            path: "courseId",
+            select: "title imageurl",
+          },
+        }),
+      submittedFinalTestModel.countDocuments(submissionFilter),
+    ]);
 
     res.status(200).json({
+      pagination: getPaginationMetadata({ page, limit, total }),
       submissions: submissions.map(sub => ({
         id: sub._id,
         studentName: sub.userId?.username || "Unknown",
@@ -230,13 +241,12 @@ export const reviewAllFinalTestSubmissions = asyncHandler(
         courseId: sub.finalTestId?.courseId?._id || null,
         submittedAt: sub.submittedAt,
         status: sub.status || "pending",
-        rating: sub.rating || null,
+        rating: sub.rating ?? null,
         feedback: sub.feedback || null,
         reviewerName: sub.reviewerId?.username || null,
         reviewerEmail: sub.reviewerId?.email || null
       }))
     });
-    console.log(submissions);
   }
 );
 
@@ -429,28 +439,36 @@ export const downloadStudentSubmission = asyncHandler(async (req, res, next) => 
     // Pipe file stream to response
     response.data.pipe(res);
   } catch (err) {
-    console.error("Download error:", err.message);
-    res.status(500).json({ message: "Failed to download the file" });
+    return next(err);
   }
 });
 
 
-export const getStudentFinalTestFeedback = async (req, res) => {
-  try {
+export const getStudentFinalTestFeedback = asyncHandler(async (req, res) => {
+    const { page, limit, skip } = getPagination(req.query);
+    const userId = req.authuser._id;
     // Find all final test submissions for this student with proper population
-    const submissions = await findStudentFinalTestFeedback({
-      authUser: req.authuser,
-    });
+    const [submissions, total] = await Promise.all([
+      findStudentFinalTestFeedback({
+        authUser: req.authuser,
+        skip,
+        limit,
+      }),
+      submittedFinalTestModel.countDocuments({ userId }),
+    ]);
 
     if (!submissions || submissions.length === 0) {
-      return res.status(404).json({
+      return res.status(200).json({
         message: "No final test submissions found",
+        pagination: getPaginationMetadata({ page, limit, total }),
+        submissions: [],
       });
     }
 
     // Return all submissions with their feedback and ratings
     return res.status(200).json({
       message: "Final test feedbacks retrieved successfully",
+      pagination: getPaginationMetadata({ page, limit, total }),
       submissions: submissions.map((submission) => {
         const submissionData = {
           id: submission._id,
@@ -478,14 +496,7 @@ export const getStudentFinalTestFeedback = async (req, res) => {
         return submissionData;
       }),
     });
-  } catch (error) {
-    console.error("Error getting final test feedbacks:", error);
-    return res.status(500).json({
-      message: "Error getting final test feedbacks",
-      error: error.message,
-    });
-  }
-};
+});
 
 
 

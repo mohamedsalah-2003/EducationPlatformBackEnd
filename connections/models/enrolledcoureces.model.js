@@ -29,4 +29,6 @@ const enrolledCoursesSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+enrolledCoursesSchema.index({ userid: 1, 'courses.courseId': 1 });
+
 export const enrolledCoursesModel = mongoose.model('EnrolledCourses', enrolledCoursesSchema);

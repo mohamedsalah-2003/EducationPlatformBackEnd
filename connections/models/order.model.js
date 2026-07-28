@@ -40,11 +40,6 @@ const orderSchema = new mongoose.Schema(
       default: 0,
       required: true,
     },
-    paymentMethod: {
-      type: String,
-      required: true,
-      enum: ["cash", "card"],
-    },
     status: {
       type: String,
       required: true,
@@ -94,5 +89,6 @@ orderSchema.index(
     partialFilterExpression: { stripeSessionId: { $type: "string" } },
   }
 );
+orderSchema.index({ userId: 1, createdAt: -1 });
 
 export const orderModel = mongoose.model("Order", orderSchema);

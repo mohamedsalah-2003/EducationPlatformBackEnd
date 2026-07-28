@@ -63,6 +63,10 @@ git push origin main
    STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
    PUBLIC_API_URL=https://your-backend-domain.vercel.app
    FRONTEND_URL=https://your-frontend-domain.vercel.app
+   MONITORING_TOKEN=generate_a_long_random_monitoring_token
+   API_RATE_LIMIT_SECRET=generate_a_long_random_rate_limit_secret
+   API_RATE_LIMIT_WINDOW_MINUTES=15
+   API_RATE_LIMIT_MAX_REQUESTS=300
    SALT_ROUNDS=10
    ORDER_TOKEN=your_order_token
    ```
@@ -129,7 +133,8 @@ Use tools like Postman or curl to test your endpoints:
 
 ```bash
 # Test the health endpoint
-curl https://your-app.vercel.app/test
+curl https://your-app.vercel.app/health/live
+curl https://your-app.vercel.app/health/ready
 
 # Test user registration
 curl -X POST https://your-app.vercel.app/user \

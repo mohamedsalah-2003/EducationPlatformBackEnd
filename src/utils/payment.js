@@ -8,7 +8,6 @@ const getStripeClient = () => {
 }
 
 export const paymentFunction = async({
-    payment_method_types=['card'],
     mode='payment',
     customer_email="",
     metadata={},
@@ -19,7 +18,6 @@ export const paymentFunction = async({
  })=>{
     const stripe = getStripeClient()
     const paymentdata  = await stripe.checkout.sessions.create({
-        payment_method_types,//required
         mode,//required
         customer_email,//optional
         metadata,//optional

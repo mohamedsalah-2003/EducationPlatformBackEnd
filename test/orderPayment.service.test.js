@@ -12,6 +12,7 @@ import {
   classifyStripeEvent,
   completeCardOrder,
 } from "../src/modules/order/orderPayment.service.js";
+import { formatCheckoutOrder } from "../src/modules/order/order.controller.js";
 
 const checkoutEvent = ({ type, paymentStatus }) => ({
   type,
@@ -92,6 +93,7 @@ test("order model supports pending payment lifecycle states", () => {
   const statusPath = orderModel.schema.path("status");
   const paymentStatusPath = orderModel.schema.path("paymentStatus");
 
+  assert.equal(orderModel.schema.path("paymentMethod"), undefined);
   assert.deepEqual(statusPath.enumValues, [
     "pending",
     "awaiting_payment",
@@ -106,6 +108,24 @@ test("order model supports pending payment lifecycle states", () => {
     "cancelled",
     "failed",
   ]);
+});
+
+test("checkout API response excludes internal payment method data", () => {
+  assert.deepEqual(
+    formatCheckoutOrder({
+      _id: "order-1",
+      status: "awaiting_payment",
+      paymentStatus: "pending",
+      checkoutExpiresAt: new Date("2026-07-28T12:00:00.000Z"),
+      paymentMethod: "legacy-value",
+    }),
+    {
+      _id: "order-1",
+      status: "awaiting_payment",
+      paymentStatus: "pending",
+      checkoutExpiresAt: new Date("2026-07-28T12:00:00.000Z"),
+    }
+  );
 });
 
 test("success, cancel, and raw webhook endpoints are registered", () => {
@@ -135,7 +155,6 @@ test("a verified paid session enrolls the student and completes the order", asyn
     _id: orderId,
     userId,
     cartId,
-    paymentMethod: "card",
     status: "awaiting_payment",
     paymentStatus: "pending",
     stripeSessionId: "cs_test_paid",

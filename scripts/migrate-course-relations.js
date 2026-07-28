@@ -133,7 +133,7 @@ const run = async () => {
     dbName: process.env.DB_NAME || "educationPlatform",
   });
 
-  const [courses, legacySchedules] = await Promise.all([
+  const [courses, legacySchedules, legacyLessonSubmissionArrays] = await Promise.all([
     courseModel.collection
       .find(
         {},
@@ -147,6 +147,9 @@ const run = async () => {
       )
       .toArray(),
     scheduleModel.collection.find({}).toArray(),
+    leasonModel.collection.countDocuments({
+      submissions: { $exists: true },
+    }),
   ]);
 
   const schedulesByCourse = groupSchedulesByCourse(legacySchedules);
@@ -180,6 +183,7 @@ const run = async () => {
       (plan) => plan.hadLegacyFinalTest
     ).length,
     orphanSchedulesLeftUntouched: orphanSchedules.length,
+    legacyLessonSubmissionArraysToRemove: legacyLessonSubmissionArrays,
     warnings: warnings.length,
   };
 
@@ -237,6 +241,12 @@ const run = async () => {
 
       await scheduleModel.collection.deleteMany(
         { courseId: { $in: plans.map((plan) => plan.courseId) } },
+        { session }
+      );
+
+      await leasonModel.collection.updateMany(
+        { submissions: { $exists: true } },
+        { $unset: { submissions: "" } },
         { session }
       );
     });

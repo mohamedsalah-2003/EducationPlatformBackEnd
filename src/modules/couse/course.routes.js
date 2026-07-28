@@ -7,12 +7,16 @@ import { multercloudFunction } from '../../services/multerCloudenary.js'
 import { allowedExtensions } from '../../utils/allowedExtentions.js'
 import { requireCourseManagement } from '../../middelwares/courseAccess.js'
 import { preventConcurrentRequests } from '../../middelwares/preventConcurrentRequests.js'
+import { validationCoreFunction } from '../../middelwares/validation.js'
+import { mutationSchemas } from '../../validation/apiSchemas.js'
+import { paginationQuerySchema } from '../../validation/apiSchemas.js'
 
 
 router.post(
   '/',
   isAuth(),
   checkAdminOrInstructor(),
+  validationCoreFunction(mutationSchemas.courseCreate),
   preventConcurrentRequests({
     operation: 'course-create',
     key: (req) => req.body.title,
@@ -20,11 +24,12 @@ router.post(
   }),
   course.addCourse
 )
-router.get('/',course.getCourses)
+router.get('/', validationCoreFunction({ query: paginationQuerySchema }), course.getCourses)
 router.patch(
   '/:courseId/instructor',
   isAuth(),
   checkAdmin(),
+  validationCoreFunction(mutationSchemas.courseInstructor),
   preventConcurrentRequests({
     operation: 'course-instructor',
     key: (req) => req.params.courseId,
@@ -35,7 +40,9 @@ router.delete(
   '/:courseId',
   isAuth(),
   checkAdminOrInstructor(),
+  validationCoreFunction(mutationSchemas.courseParams),
   requireCourseManagement(),
+  validationCoreFunction(mutationSchemas.empty),
   preventConcurrentRequests({
     operation: 'course-delete',
     key: (req) => req.params.courseId,
@@ -43,11 +50,11 @@ router.delete(
   }),
   course.deleteCourse
 );
-router.post('/:courseId/cover', isAuth(), checkAdminOrInstructor(), requireCourseManagement(), preventConcurrentRequests({
+router.post('/:courseId/cover', isAuth(), checkAdminOrInstructor(), validationCoreFunction(mutationSchemas.courseParams), requireCourseManagement(), preventConcurrentRequests({
   operation: 'course-cover',
   key: (req) => req.params.courseId,
   message: 'A course image upload is already in progress',
-}), multercloudFunction(allowedExtensions.Image).single('courseimage'),course.uploadCoursePic
+}), multercloudFunction(allowedExtensions.Image).single('courseimage'), validationCoreFunction(mutationSchemas.empty), course.uploadCoursePic
 );
 
 

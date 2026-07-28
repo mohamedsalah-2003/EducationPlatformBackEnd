@@ -1,96 +1,77 @@
-# 📚 Educational Platform
+# Education Platform API
 
-A full-featured, role-based e-learning platform built with Angular and Node.js. It allows Admins, Instructors, and Students to interact within a dynamic learning environment, supporting course creation, enrollment, assignments, tests, and feedback.
+Node.js and Express API for the Education Platform. It provides role-based
+course administration, enrollment, assignments, final tests, feedback,
+Cloudinary uploads, and Stripe Checkout.
 
----
-# Frontend Repo Link
+## Requirements
 
-https://github.com/mo7amedfe/EducationPlatform
+- Node.js 18 or newer
+- MongoDB Atlas or another replica-set deployment
+- Cloudinary account
+- Stripe account and signed webhook endpoint
 
-## 🚀 Features
+## Local setup
 
-### 👨‍🎓 Student Role
-- Register or log in as a student
-- Browse and enroll in available courses
-- Access course content (videos, files, etc.)
-- Submit assignments and take final tests
-- Receive feedback from instructors
-- View grades and submissions
+1. Install dependencies:
 
-### 🧑‍🏫 Instructor Role
-- Log in and access instructor dashboard
-- Create and manage courses
-- Add lessons, upload video content and resources
-- Create assignments and **final tests** for each course
-- **Review student submissions and final test answers**
-- **Provide feedback and grades for assignments and tests**
+   ```sh
+   npm ci
+   ```
 
-### 🛠 Admin Role
-- Log in to the admin panel
-- View and manage all users (students & instructors)
-- Create and manage courses
-- Add or remove lessons or tests
-- Maintain the integrity and structure of the platform
+2. Copy `.env.example` to `.env` and fill the local values. Never commit
+   credentials or publish demo passwords.
+3. Start the API:
 
----
+   ```sh
+   npm run dev
+   ```
 
-## 🧪 Demo Credentials
+4. Check liveness and database readiness:
 
-You can use the following demo accounts to test the system:
+   ```text
+   GET /health/live
+   GET /health/ready
+   ```
 
-### 🔐 Admin Login
-- **Email:** `admin@gmail.com`  
-- **Password:** `@Mm123456`
+## Verification
 
-### 👨‍🏫 Instructor Login
-- **Email:** `ins@gmail.com`  
-- **Password:** `@Mm123456`
+```sh
+npm test
+npm run migrate:course-relations:check
+```
 
-### 👨‍🎓 Student Login
-- **Email:** `std@gmail.com`  
-- **Password:** `@Mm12345`  
-Or you can register a new student account from the login page.
+Before a production release, follow
+[`PRODUCTION_OPERATIONS.md`](./PRODUCTION_OPERATIONS.md) and run the staging
+verification:
 
----
+```sh
+npm run verify:staging
+```
 
-## 🧰 Tech Stack
+## Required production configuration
 
-- **Frontend:** Angular 19, RxJS, Angular Forms, bootstrap  
-- **Backend:** Node.js, Express.js  
-- **Database:** MongoDB  
-- **Authentication:** JWT-based login system  
-- **File Uploads:** Cloudinary 
-- **Deployment:**  Vercel
+Use the deployment platform's encrypted secret store. See `.env.example` for
+the complete variable names. Production startup fails closed when required
+configuration is missing.
 
----
+The Stripe webhook endpoint is:
 
-## .env variables 
+```text
+POST /order/webhook
+```
 
-PORT = "3000" 
-SALT_ROUNDS = "8"
-DB_URL="mongodb+srv://admin:Memotito78@cluster0.t6noy0u.mongodb.net"
-API_KEY="955435344855769"
-API_SECRET="fmZQCTNm1QRTMZeBnqvKys1w3FQ"
-CLOUD_NAME="dsixcalf3"
-STRIPE_SECRET_KEY="sk_test_51RKeDzFvihyT1UjAeM3DOMJt5Mtfett0wutHTa0qZdZ24QYSUYWhXWKdACALNHUGMPvJCiF8oVXAwdF0ZT83VeIH00kxR59ALi"
-ORDER_TOKEN="orderToken"
-DEFAULT_SIGNATURE="defaultSignature"
+Subscribe it to:
 
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
+- `checkout.session.expired`
 
----
+## Security
 
-
-## 📦 Installation & Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/your-username/your-repo-name.git
-
-# Navigate to frontend
-cd frontend
-
-# Install frontend dependencies
-npm install
-
-# Run the Angular app
-ng serve
+- Do not put API keys, database URLs, JWT secrets, or account passwords in
+  source files or documentation.
+- Rotate any credential that has ever been committed, then remove it from Git
+  history using an approved repository-history procedure.
+- Keep frontend and backend CORS/CSP domains synchronized.

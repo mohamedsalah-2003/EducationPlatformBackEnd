@@ -3,8 +3,15 @@ import { leasonModel } from "../../../connections/models/leason.model.js";
 import { asyncHandler } from "../../utils/errorHandeling.js";
 import { v2 as cloudinary } from "cloudinary";
 import { courseModel } from "../../../connections/models/course.model.js";
-import fs from "fs"; // Needed to remove local file after upload
 import https from 'https';
+import { submittedAssignmentModel } from "../../../connections/models/submittedAssignment.model.js";
+import { attachLessonSubmissions } from "../../services/lessonSubmissions.js";
+import {
+  createLessonVideoUploadSignature,
+  verifyLessonVideoUpload,
+} from "../../services/lessonVideoUpload.js";
+import { removeUploadedFile } from "../../utils/uploadCleanup.js";
+import { logError } from "../../utils/logger.js";
 
 // Add a new lesson to a course
 export const addleason = asyncHandler(async (req, res, next) => {
@@ -56,11 +63,20 @@ export const getLessonsByCourse = asyncHandler(async (req, res) => {
 
   const courseLessons = await leasonModel
     .find({ courseId })
-    .select("title description video assignment submissions")
-    .populate({
-      path: "submissions",
-      match: { userId },
-    });
+    .select("title description video assignment")
+    .lean();
+  const lessonIds = courseLessons.map((lesson) => lesson._id);
+  const studentSubmissions = await submittedAssignmentModel
+    .find({
+      userId,
+      lessonId: { $in: lessonIds },
+    })
+    .select("lessonId submittedAt status rating feedback")
+    .lean();
+  const lessonsWithSubmissions = attachLessonSubmissions(
+    courseLessons,
+    studentSubmissions
+  );
 
   return res.status(200).json({
     message: "Lessons retrieved successfully",
@@ -68,7 +84,7 @@ export const getLessonsByCourse = asyncHandler(async (req, res) => {
     courseId: course._id,
     courseImage: course.imageurl,
     courseDescription: course.description,
-    courselessons: courseLessons,
+    courselessons: lessonsWithSubmissions,
   });
 });
 
@@ -76,49 +92,58 @@ export const getLessonsByCourse = asyncHandler(async (req, res) => {
 
 
 
-// Upload video to lesson
-export const addvideotoleason = asyncHandler(async (req, res, next) => {
+// Generate credentials for a browser-to-Cloudinary video upload.
+export const getLessonVideoUploadSignature = asyncHandler(async (req, res) => {
   const { lessonId } = req.params;
+  const upload = createLessonVideoUploadSignature({ lessonId });
 
-  if (!req.file) {
-    return next(new Error("No video file uploaded", { cause: 400 }));
-  }
+  return res.status(200).json({
+    message: "Video upload signature created",
+    upload,
+  });
+});
 
-  try {
-    const { secure_url, public_id, duration, format } =
-      await cloudinary.uploader.upload(req.file.path, {
-        folder: `leason/video/${lessonId}`,
-        use_filename: true,
-        unique_filename: false,
-        resource_type: "video",
-        chunk_size: 6000000,
-      });
+// Verify the direct upload with Cloudinary before attaching it to a lesson.
+export const completeLessonVideoUpload = asyncHandler(async (req, res, next) => {
+  const { lessonId } = req.params;
+  const { publicId, version, signature } = req.body;
+  const video = await verifyLessonVideoUpload({
+    lessonId,
+    publicId,
+    version,
+    signature,
+  });
+  const previousPublicId = req.lesson?.video?.public_id;
 
-    const videoleason = await leasonModel.findByIdAndUpdate(
-      lessonId,
-      {
-        video: {
-          secure_url,
-          public_id,
-          duration,
-          format,
-        },
-      },
-      { new: true }
-    );
+  const videoleason = await leasonModel.findByIdAndUpdate(
+    lessonId,
+    {
+      video,
+    },
+    { new: true, runValidators: true }
+  );
 
-    if (!videoleason) {
-      await cloudinary.uploader.destroy(public_id);
-      return next(new Error("Lesson not found", { cause: 404 }));
-    }
-
-    res.status(200).json({
-      message: "Video uploaded successfully",
-      lesson: videoleason,
+  if (!videoleason) {
+    await cloudinary.uploader.destroy(video.public_id, {
+      resource_type: "video",
     });
-  } catch (error) {
-    return next(error);
+    return next(new Error("Lesson not found", { cause: 404 }));
   }
+
+  if (previousPublicId && previousPublicId !== video.public_id) {
+    await cloudinary.uploader
+      .destroy(previousPublicId, { resource_type: "video" })
+      .catch((error) => {
+        logError("previous_lesson_video_cleanup_failed", error, {
+          lessonId,
+        });
+      });
+  }
+
+  return res.status(200).json({
+    message: "Video uploaded successfully",
+    lesson: videoleason,
+  });
 });
 
 
@@ -136,9 +161,6 @@ export const uploadAssignment = asyncHandler(async (req, res, next) => {
       folder: "assignments", // optional folder in Cloudinary                  
       resource_type: "auto", // auto-detect file type (image, video, raw, etc.)
     });
-
-    // Optionally delete local file after upload
-    fs.unlinkSync(req.file.path);
 
     // Get Cloudinary file URL
     const filePath = result.secure_url;
@@ -164,93 +186,12 @@ export const uploadAssignment = asyncHandler(async (req, res, next) => {
       message: "Assignment uploaded successfully",
       lesson: updatedLesson,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Upload failed", error: err.message });
+  } catch (error) {
+    return next(error);
+  } finally {
+    await removeUploadedFile(req.file);
   }
 });
-
-// Submit assignment
-export const submitAssignment = asyncHandler(async (req, res, next) => {
-  const userId = req.authuser._id;
-  const { lessonId } = req.params;
-
-  if (!req.file) {
-    return res.status(400).json({ message: "No file uploaded" });
-  }
-
-  const lesson = await leasonModel.findById(lessonId);
-  if (!lesson) {
-    return res.status(404).json({ message: "Lesson not found" });
-  }
-
-  if (lesson.assignment?.dueDate && new Date() > lesson.assignment.dueDate) {
-    return res
-      .status(400)
-      .json({ message: "Assignment submission is past due date" });
-  }
-
-  const { secure_url, public_id } = await cloudinary.uploader.upload(
-    req.file.path,
-    {
-      folder: `leason/submissions/${lessonId}/${userId}`,
-      use_filename: true,
-      unique_filename: false,
-      resource_type: "auto",
-    }
-  );
-
-  const updatedLesson = await leasonModel.findByIdAndUpdate(
-    lessonId,
-    {
-      $push: {
-        submissions: {
-          userId,
-          file: { secure_url, public_id },
-          submittedAt: new Date(),
-        },
-      },
-    },
-    { new: true }
-  );
-
-  res.status(200).json({
-    message: "Assignment submitted successfully",
-    lesson: updatedLesson,
-  });
-});
-
-// Grade assignment
-export const gradeAssignment = asyncHandler(async (req, res, next) => {
-  const { lessonId, submissionId } = req.params;
-  const { mark, feedback } = req.body;
-
-  if (!mark || mark < 0 || mark > 100) {
-    return res.status(400).json({ message: "Valid mark (0-100) is required" });
-  }
-
-  const lesson = await leasonModel.findById(lessonId);
-  if (!lesson) {
-    return res.status(404).json({ message: "Lesson not found" });
-  }
-
-  const submission = lesson.submissions.id(submissionId);
-  if (!submission) {
-    return res.status(404).json({ message: "Submission not found" });
-  }
-
-  submission.mark = mark;
-  submission.feedback = feedback;
-  submission.status = "graded";
-
-  await lesson.save();
-
-  res.status(200).json({
-    message: "Assignment graded successfully",
-    lesson,
-  });
-});
-
 
 export const downloadAssignment = asyncHandler(async (req, res, next) => {
   const { lessonId } = req.params;
@@ -270,7 +211,6 @@ export const downloadAssignment = asyncHandler(async (req, res, next) => {
     res.setHeader('Content-Disposition', 'attachment; filename=assignment.pdf');
     fileRes.pipe(res);
   }).on('error', (err) => {
-    console.error('File download error:', err);
-    res.status(500).json({ message: 'Failed to download assignment file.' });
+    next(err);
   });
 });

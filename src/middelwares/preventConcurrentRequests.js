@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { operationLockModel } from "../../connections/models/operationLock.model.js";
+import { logError } from "../utils/logger.js";
 
 const normalizeKeyPart = (value) =>
   String(value ?? "")
@@ -40,7 +41,12 @@ export const preventConcurrentRequests = ({
       released = true;
       operationLockModel
         .deleteOne({ _id: lockId, attemptId })
-        .catch((error) => console.error("Could not release operation lock", error));
+        .catch((error) =>
+          logError("operation_lock_release_failed", error, {
+            operation,
+            requestId: req.requestId,
+          })
+        );
     };
 
     res.once("finish", releaseLock);

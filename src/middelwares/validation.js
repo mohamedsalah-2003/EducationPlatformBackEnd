@@ -1,5 +1,6 @@
 // middlewares/validation.js
 import joi from 'joi';
+import { removeUploadedFile } from '../utils/uploadCleanup.js';
 
 export const generalFields = {
   email: joi
@@ -44,31 +45,40 @@ export const generalFields = {
 
 // validationCoreFunction to apply Joi schemas
 export const validationCoreFunction = (schema) => {
-  return (req, res, next) => {
+  const validateRequest = async (req, res, next) => {
     const validationResults = [];
+    const validatedValues = {};
 
-    if (schema.body) {
-      const { error } = schema.body.validate(req.body, { abortEarly: false });
-      if (error) validationResults.push(...error.details);
-    }
+    for (const source of ['body', 'query', 'params']) {
+      if (!schema[source]) continue;
 
-    if (schema.query) {
-      const { error } = schema.query.validate(req.query, { abortEarly: false });
-      if (error) validationResults.push(...error.details);
-    }
-
-    if (schema.params) {
-      const { error } = schema.params.validate(req.params, { abortEarly: false });
-      if (error) validationResults.push(...error.details);
+      const { error, value } = schema[source].validate(req[source] ?? {}, {
+        abortEarly: false,
+        convert: true,
+        stripUnknown: false,
+      });
+      if (error) {
+        validationResults.push(...error.details);
+      } else {
+        validatedValues[source] = value;
+      }
     }
 
     if (validationResults.length > 0) {
+      await removeUploadedFile(req.file);
       return res.status(400).json({
         message: 'Validation Error',
+        code: 'VALIDATION_ERROR',
         errors: validationResults.map((err) => err.message),
       });
     }
 
+    Object.entries(validatedValues).forEach(([source, value]) => {
+      req[source] = value;
+    });
     next();
   };
+
+  validateRequest.validationSchema = schema;
+  return validateRequest;
 };

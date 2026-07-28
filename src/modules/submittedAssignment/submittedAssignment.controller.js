@@ -7,6 +7,11 @@ import cloudinary from '../../utils/cloudinaryConfigration.js';
 import axios from 'axios';
 import { getManagedCourseIds } from '../../middelwares/courseAccess.js';
 import { findStudentAssignmentFeedback } from '../../services/studentFeedback.js';
+import {
+  getPagination,
+  getPaginationMetadata,
+} from '../../utils/pagination.js';
+import { logError } from '../../utils/logger.js';
 import https from 'https'; // ضروري علشان نعمل request للملف من Cloudinary
 
 
@@ -31,8 +36,7 @@ export const downloadMySubmission = asyncHandler(async (req, res, next) => {
     res.setHeader('Content-Disposition', 'attachment; filename=submission.pdf');
     fileRes.pipe(res);
   }).on('error', (err) => {
-    console.error('File download error:', err);
-    res.status(500).json({ message: 'Failed to download file.' });
+    next(err);
   });
 });
 
@@ -76,25 +80,20 @@ export const createSubmission = asyncHandler(async (req, res, next) => {
       }
   
       // Upload file to Cloudinary
-      let cloudinaryResult;
-      try {
-        cloudinaryResult = await new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              resource_type: "raw",
-              folder: "assignmentSubmissions",
-              format: "pdf"
-            },
-            (error, result) => {
-              if (error) return reject(error);
-              resolve(result);
-            }
-          );
-          uploadStream.end(req.file.buffer);
-        });
-      } catch (err) {
-        return res.status(500).json({ message: "Cloudinary upload error", error: err.message });
-      }
+      const cloudinaryResult = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: "raw",
+            folder: "assignmentSubmissions",
+            format: "pdf"
+          },
+          (error, result) => {
+            if (error) return reject(error);
+            resolve(result);
+          }
+        );
+        uploadStream.end(req.file.buffer);
+      });
   
       const submission = await submittedAssignmentModel.create({
         lessonId,
@@ -103,21 +102,19 @@ export const createSubmission = asyncHandler(async (req, res, next) => {
         submittedAt: new Date()
       });
   
-      // Add this block to update the lesson's submissions array
-      await leasonModel.findByIdAndUpdate(lessonId, {
-        $addToSet: { submissions: submission._id },
-      });
-  
       res.status(201).json({ message: 'Submission created successfully', submission });
     } catch (error) {
-      console.error('Error creating submission:', error);
+      logError('assignment_submission_creation_failed', error, {
+        requestId: req.requestId,
+        lessonId: req.params.lessonId,
+      });
       if (error?.code === 11000) {
         return res.status(409).json({
           message: 'You have already submitted this assignment',
           code: 'ASSIGNMENT_ALREADY_SUBMITTED',
         });
       }
-      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+      return next(error);
     }
   });
 
@@ -140,25 +137,33 @@ export const reviewAllSubmissions = asyncHandler(async (req, res, next) => {
     submissionFilter.lessonId = { $in: lessonIds };
   }
 
-  const submissions = await submittedAssignmentModel.find(submissionFilter)
-    .populate({
-      path: 'userId',
-      select: 'username email'
-    })
-    .populate({
-      path: 'reviewerId',
-      select: 'username email'
-    })
-    .populate({
-      path: 'lessonId',
-      select: 'title description courseId',
-      populate: {
-        path: 'courseId',
-        select: 'title   imageurl'
-      }
-    });
+  const { page, limit, skip } = getPagination(req.query);
+  const [submissions, total] = await Promise.all([
+    submittedAssignmentModel.find(submissionFilter)
+      .sort({ submittedAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({
+        path: 'userId',
+        select: 'username email'
+      })
+      .populate({
+        path: 'reviewerId',
+        select: 'username email'
+      })
+      .populate({
+        path: 'lessonId',
+        select: 'title description courseId',
+        populate: {
+          path: 'courseId',
+          select: 'title imageurl'
+        }
+      }),
+    submittedAssignmentModel.countDocuments(submissionFilter),
+  ]);
 
   res.status(200).json({
+    pagination: getPaginationMetadata({ page, limit, total }),
     submissions: submissions.map(sub => ({
       ...sub.toObject(),
       reviewerName: sub.reviewerId?.username || null,
@@ -232,7 +237,7 @@ export const gradeSubmission = asyncHandler(async (req, res, next) => {
 
 // Download a submission (for admin and instructor to download any submission)
 
-export const downloadSubmission = asyncHandler(async (req, res) => {
+export const downloadSubmission = asyncHandler(async (req, res, next) => {
   const { submissionId } = req.params;
 
   const submission = await submittedAssignmentModel.findById(submissionId);
@@ -262,27 +267,35 @@ export const downloadSubmission = asyncHandler(async (req, res) => {
 
     res.status(200).send(response.data); // ← رجّع الـ buffer مباشرة
   } catch (error) {
-    console.error('Failed to download file:', error.message);
-    res.status(500).json({ message: 'Error downloading file', error: error.message });
+    return next(error);
   }
 });
 
-export const getStudentAssignmentSubmissions = async (req, res) => {
-  try {
+export const getStudentAssignmentSubmissions = asyncHandler(async (req, res) => {
+    const { page, limit, skip } = getPagination(req.query);
+    const userId = req.authuser._id;
     // Find all assignment submissions for this student with proper population
-    const submissions = await findStudentAssignmentFeedback({
-      authUser: req.authuser,
-    });
+    const [submissions, total] = await Promise.all([
+      findStudentAssignmentFeedback({
+        authUser: req.authuser,
+        skip,
+        limit,
+      }),
+      submittedAssignmentModel.countDocuments({ userId }),
+    ]);
 
     if (!submissions || submissions.length === 0) {
-      return res.status(404).json({
-        message: 'No assignment submissions found'
+      return res.status(200).json({
+        message: 'No assignment submissions found',
+        pagination: getPaginationMetadata({ page, limit, total }),
+        submissions: [],
       });
     }
 
     // Return all submissions with their details
     return res.status(200).json({
       message: 'Assignment submissions retrieved successfully',
+      pagination: getPaginationMetadata({ page, limit, total }),
       submissions: submissions.map(submission => {
         const submissionData = {
           id: submission._id,
@@ -308,11 +321,4 @@ export const getStudentAssignmentSubmissions = async (req, res) => {
         return submissionData;
       })
     });
-  } catch (error) {
-    console.error('Error getting assignment submissions:', error);
-    return res.status(500).json({
-      message: 'Error getting assignment submissions',
-      error: error.message
-    });
-  }
-};
+});

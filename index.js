@@ -1,17 +1,30 @@
-import express from "express";
+import 'dotenv/config';
+import express from 'express';
+import connectDB from './connections/dbconnection.js';
+import { validateRuntimeConfiguration } from './src/config/runtimeConfig.js';
+import { initapp } from './src/initapp.js';
+import { logError, logInfo } from './src/utils/logger.js';
+
+validateRuntimeConfiguration();
+
 const app = express();
-import { config } from "dotenv";
-import { initapp } from "./src/initapp.js";
-import connectDB from './connections/dbconnection.js'; // حسب مكان الملف
-config();
+initapp(app, express);
+
 const startServer = async () => {
-    await connectDB(); // ✅ اتصل قبل أي استخدام للـ Models
+  try {
+    await connectDB();
     const port = process.env.PORT || 3000;
     app.listen(port, () => {
-      console.log(`🚀 Server is running on ${port}`);
+      logInfo('server_started', { port });
     });
-  };
-  
+  } catch (error) {
+    logError('server_start_failed', error);
+    process.exitCode = 1;
+  }
+};
+
+if (!process.env.VERCEL) {
   startServer();
-initapp(app, express);
+}
+
 export default app;

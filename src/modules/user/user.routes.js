@@ -7,6 +7,8 @@ import { SignInSchema, SignUpSchema } from './user.validationSchema.js'
 import { multercloudFunction } from '../../services/multerCloudenary.js'
 import { allowedExtensions } from '../../utils/allowedExtentions.js'
 import { preventConcurrentRequests } from '../../middelwares/preventConcurrentRequests.js'
+import { mutationSchemas } from '../../validation/apiSchemas.js'
+import { paginationQuerySchema } from '../../validation/apiSchemas.js'
 
 
 
@@ -21,7 +23,8 @@ router.post(
   ur.SignUp
 )
 router.post('/login',validationCoreFunction(SignInSchema), ur.SignIn)
-router.patch('/', isAuth(), preventConcurrentRequests({
+router.post('/logout', isAuth(), validationCoreFunction(mutationSchemas.empty), ur.SignOut)
+router.patch('/', isAuth(), validationCoreFunction(mutationSchemas.userUpdate), preventConcurrentRequests({
   operation: 'profile-update',
   key: (req) => req.authuser._id,
 }), ur.updateProfile)   //update only one
@@ -30,10 +33,10 @@ router.post('/profile',isAuth(), preventConcurrentRequests({
   operation: 'profile-picture',
   key: (req) => req.authuser._id,
   message: 'A profile picture upload is already in progress',
-}), multercloudFunction(allowedExtensions.Image).single('profile'),ur.uploudProfilePic)
+}), multercloudFunction(allowedExtensions.Image).single('profile'), validationCoreFunction(mutationSchemas.empty), ur.uploudProfilePic)
 
-router.get('/allUsers',isAuth(),ur.getallusers)
-router.delete('/deleteUser', isAuth(), preventConcurrentRequests({
+router.get('/allUsers', isAuth(), validationCoreFunction({ query: paginationQuerySchema }), ur.getallusers)
+router.delete('/deleteUser', isAuth(), validationCoreFunction(mutationSchemas.userDelete), preventConcurrentRequests({
   operation: 'user-delete',
   key: (req) => req.body.userId,
   message: 'This user is already being deleted',

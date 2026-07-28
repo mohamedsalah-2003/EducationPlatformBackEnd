@@ -14,7 +14,11 @@ import {
   requireLessonAccess,
 } from '../../middelwares/courseAccess.js';
 import multer from 'multer';
+import { validatePdfUpload } from '../../middelwares/fileValidation.js';
 import { preventConcurrentRequests } from '../../middelwares/preventConcurrentRequests.js';
+import { validationCoreFunction } from '../../middelwares/validation.js';
+import { mutationSchemas } from '../../validation/apiSchemas.js';
+import { paginationQuerySchema } from '../../validation/apiSchemas.js';
 
 
 const router = Router();
@@ -40,6 +44,7 @@ router.post(
   '/:lessonId/submissions',
   isAuth(),
   checkUser(),
+  validationCoreFunction(mutationSchemas.submissionCreate),
   requireLessonAccess(),
   preventConcurrentRequests({
     operation: 'assignment-submission',
@@ -47,16 +52,19 @@ router.post(
     message: 'This assignment submission is already being uploaded',
   }),
   upload.single('file'),
+  validatePdfUpload,
+  validationCoreFunction(mutationSchemas.empty),
   createSubmission
 );
-router.get('/submissions', isAuth(), checkUser(), getStudentAssignmentSubmissions);
+router.get('/submissions', isAuth(), checkUser(), validationCoreFunction({ query: paginationQuerySchema }), getStudentAssignmentSubmissions);
 
 // Admin and Instructor routes
-router.get('/review', isAuth(), checkAdminOrInstructor(), reviewAllSubmissions);
+router.get('/review', isAuth(), checkAdminOrInstructor(), validationCoreFunction({ query: paginationQuerySchema }), reviewAllSubmissions);
 router.post(
   '/:submissionId/grade',
   isAuth(),
   checkAdminOrInstructor(),
+  validationCoreFunction(mutationSchemas.submissionGrade),
   requireAssignmentSubmissionManagement(),
   preventConcurrentRequests({
     operation: 'assignment-grade',

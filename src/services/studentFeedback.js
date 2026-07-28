@@ -10,10 +10,15 @@ const authenticatedUserId = (authUser) => {
 
 export const findStudentAssignmentFeedback = ({
   authUser,
+  skip = 0,
+  limit = 25,
   model = submittedAssignmentModel,
 }) =>
   model
     .find({ userId: authenticatedUserId(authUser) })
+    .sort({ submittedAt: -1, _id: -1 })
+    .skip(skip)
+    .limit(limit)
     .populate("userId", "username email")
     .populate({
       path: "reviewerId",
@@ -30,10 +35,15 @@ export const findStudentAssignmentFeedback = ({
 
 export const findStudentFinalTestFeedback = ({
   authUser,
+  skip = 0,
+  limit = 25,
   model = submittedFinalTestModel,
 }) =>
   model
     .find({ userId: authenticatedUserId(authUser) })
+    .sort({ submittedAt: -1, _id: -1 })
+    .skip(skip)
+    .limit(limit)
     .populate("userId", "username email")
     .populate({
       path: "reviewerId",

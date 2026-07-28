@@ -7,6 +7,7 @@
     "test": "node test/run-tests.js",
     "migrate:course-relations:check": "node scripts/migrate-course-relations.js",
     "migrate:course-relations": "node scripts/migrate-course-relations.js --apply",
+    "verify:staging": "node scripts/verify-staging-readiness.js",
     "start": "node index.js",
     "dev": "nodemon index.js",
     "build": "echo 'Build completed'"

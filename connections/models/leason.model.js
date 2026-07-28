@@ -28,8 +28,7 @@ const leasonSchema = new mongoose.Schema(
       description: String,
       dueDate: Date,
       filePath:String
-    },
-    submissions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SubmittedAssignment' }]
+    }
   },
   {
     timestamps: true

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import jwt from 'jsonwebtoken'
 
 // ========================= generation ==============================
@@ -25,8 +26,31 @@ export const verifyToken = ({
   try {
     const data = jwt.verify(token, signature)
     return data
-  } catch (error) {
-    console.error('Token verification failed:', error.message)
+  } catch {
     return false
   }
 }
+
+export const generateAccessToken = ({
+  user,
+  signature = process.env.JWT_SECRET,
+  expiresIn = "7d",
+} = {}) => {
+  if (!user?._id) return false;
+
+  return jwt.sign(
+    {
+      _id: user._id,
+      email: user.email,
+      username: user.username,
+      score: user.score,
+      role: user.role,
+      tokenVersion: user.tokenVersion ?? 0,
+    },
+    signature,
+    {
+      expiresIn,
+      jwtid: randomUUID(),
+    }
+  );
+};

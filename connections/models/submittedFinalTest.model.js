@@ -43,5 +43,7 @@ const submittedFinalTestSchema = new mongoose.Schema(
 
 // Add a compound index to ensure a student can only submit once per final test
 submittedFinalTestSchema.index({ userId: 1, finalTestId: 1 }, { unique: true });
+submittedFinalTestSchema.index({ userId: 1, submittedAt: -1, _id: -1 });
+submittedFinalTestSchema.index({ finalTestId: 1, submittedAt: -1, _id: -1 });
 
 export const submittedFinalTestModel = mongoose.model('SubmittedFinalTest', submittedFinalTestSchema);

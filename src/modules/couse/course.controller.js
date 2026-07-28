@@ -10,6 +10,13 @@ import { enrolledCoursesModel } from "../../../connections/models/enrolledcourec
 import { userModel } from "../../../connections/models/user.model.js";
 import mongoose from "mongoose";
 import { courseEnrollmentLockModel } from "../../../connections/models/courseEnrollmentLock.model.js";
+import { withMongoTransaction } from "../../utils/transactions.js";
+import { removeUploadedFile } from "../../utils/uploadCleanup.js";
+import {
+  getPagination,
+  getPaginationMetadata,
+  setPaginationHeaders,
+} from "../../utils/pagination.js";
 // =============== add courses =================//
 
 export const addCourse = asyncHandler(async (req, res, next) => {
@@ -76,31 +83,46 @@ export const uploadCoursePic = asyncHandler(async (req, res, next) => {
     return next(new Error("no file uploaded", { cause: 400 }));
   }
 
-  const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
-    folder: `course/cover/${_id}`,
-    use_filename: true,
-    unique_filename: false,
-    resource_type: 'auto'
-  });
+  try {
+    const { secure_url, public_id } = await cloudinary.uploader.upload(req.file.path, {
+      folder: `course/cover/${_id}`,
+      use_filename: true,
+      unique_filename: false,
+      resource_type: 'image'
+    });
 
-  const course = await courseModel.findByIdAndUpdate(courseId, {
-    imageurl: { secure_url, public_id }
-  }, { new: true });
+    const course = await courseModel.findByIdAndUpdate(courseId, {
+      imageurl: { secure_url, public_id }
+    }, { new: true });
 
-  if (!course) {
-    await cloudinary.uploader.destroy(public_id);
-    return next(new Error("Course not found", { cause: 404 }));
+    if (!course) {
+      await cloudinary.uploader.destroy(public_id);
+      return next(new Error("Course not found", { cause: 404 }));
+    }
+
+    return res.status(200).json({ message: 'Image uploaded successfully', course });
+  } finally {
+    await removeUploadedFile(req.file);
   }
-
-  res.status(200).json({ message: 'Image uploaded successfully', course });
 });
 
 // =============== show courses =================//
 
 export const getCourses = asyncHandler(async (req, res) => {
-  const courses = await courseModel
-    .find({})
-    .populate('instructorId', 'username');
+  const { page, limit, skip } = getPagination(req.query);
+  const [courses, total] = await Promise.all([
+    courseModel
+      .find({})
+      .sort({ _id: 1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('instructorId', 'username'),
+    courseModel.countDocuments({}),
+  ]);
+  setPaginationHeaders(
+    res,
+    getPaginationMetadata({ page, limit, total })
+  );
   res.json(courses);
 });
 
@@ -147,41 +169,42 @@ export const assignInstructor = asyncHandler(async (req, res) => {
 export const deleteCourse = asyncHandler(async (req, res, next) => {
   const { courseId } = req.params;
 
-  const course = await courseModel.findById(courseId);
-  if (!course) {
-    return res.status(404).json({ message: 'Course not found' });
-  }
+  await withMongoTransaction(async (session) => {
+    const course = await courseModel.findById(courseId).session(session);
+    if (!course) {
+      throw new Error("Course not found", { cause: 404 });
+    }
 
-  // Get all lessons associated with the course
-  const lessons = await leasonModel.find({ courseId });
-  const lessonIds = lessons.map(lesson => lesson._id);
+    const lessons = await leasonModel.find({ courseId }).session(session);
+    const lessonIds = lessons.map((lesson) => lesson._id);
 
-  // Delete all submitted assignments for the course's lessons
-  await submittedAssignmentModel.deleteMany({ lessonId: { $in: lessonIds } });
+    await submittedAssignmentModel
+      .deleteMany({ lessonId: { $in: lessonIds } })
+      .session(session);
 
-  // Delete the final test and its submissions
-  const finalTest = await finalTestModel.findOne({ courseId });
-  if (finalTest) {
-    await submittedFinalTestModel.deleteMany({ finalTestId: finalTest._id });
-    await finalTestModel.findByIdAndDelete(finalTest._id);
-  }
+    const finalTest = await finalTestModel
+      .findOne({ courseId })
+      .session(session);
+    if (finalTest) {
+      await submittedFinalTestModel
+        .deleteMany({ finalTestId: finalTest._id })
+        .session(session);
+      await finalTestModel
+        .findByIdAndDelete(finalTest._id)
+        .session(session);
+    }
 
-  // Delete all lessons
-  await leasonModel.deleteMany({ courseId });
-
-  // Delete all schedules associated with the course
-  await scheduleModel.deleteMany({ courseId });
-
-  // Remove course from all enrolled courses
-  await enrolledCoursesModel.updateMany(
-    { 'courses.courseId': courseId },
-    { $pull: { courses: { courseId: courseId } } }
-  );
-
-  await courseEnrollmentLockModel.deleteMany({ courseId });
-
-  // Delete the course
-  await courseModel.findByIdAndDelete(courseId);
+    await leasonModel.deleteMany({ courseId }).session(session);
+    await scheduleModel.deleteMany({ courseId }).session(session);
+    await enrolledCoursesModel
+      .updateMany(
+        { "courses.courseId": courseId },
+        { $pull: { courses: { courseId } } }
+      )
+      .session(session);
+    await courseEnrollmentLockModel.deleteMany({ courseId }).session(session);
+    await courseModel.findByIdAndDelete(courseId).session(session);
+  });
 
   res.status(200).json({ 
     message: 'Course and all associated data (lessons, assignments, final tests, enrollments) deleted successfully' 

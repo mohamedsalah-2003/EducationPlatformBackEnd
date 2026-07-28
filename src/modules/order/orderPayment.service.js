@@ -16,14 +16,6 @@ const paymentError = (message, cause = 400, code = "PAYMENT_ERROR") =>
 const getOrderId = (checkoutSession) => checkoutSession?.metadata?.orderId;
 
 const assertCheckoutSessionMatchesOrder = ({ checkoutSession, order }) => {
-  if (order.paymentMethod !== "card") {
-    throw paymentError(
-      "The referenced order is not a card order",
-      409,
-      "INVALID_PAYMENT_METHOD"
-    );
-  }
-
   if (
     order.stripeSessionId &&
     order.stripeSessionId !== checkoutSession.id

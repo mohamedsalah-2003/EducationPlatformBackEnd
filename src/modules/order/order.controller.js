@@ -119,16 +119,21 @@ const sendPaymentError = (error, res, next) => {
   return next(error);
 };
 
+export const formatCheckoutOrder = (order) => ({
+  _id: order._id,
+  status: order.status,
+  paymentStatus: order.paymentStatus,
+  ...(order.checkoutExpiresAt
+    ? { checkoutExpiresAt: order.checkoutExpiresAt }
+    : {}),
+});
+
 export const createOrderFromCart = asyncHandler(async (req, res, next) => {
   const userId = req.authuser._id;
-  const { cartId, paymentMethod = "cash" } = req.body;
+  const { cartId } = req.body;
 
   if (!cartId || !mongoose.isValidObjectId(cartId)) {
     return res.status(400).json({ message: "A valid cart ID is required" });
-  }
-
-  if (!["cash", "card"].includes(paymentMethod)) {
-    return res.status(400).json({ message: "Unsupported payment method" });
   }
 
   const cart = await cartModel
@@ -187,7 +192,6 @@ export const createOrderFromCart = asyncHandler(async (req, res, next) => {
   const attemptId = new mongoose.Types.ObjectId().toString();
 
   let newOrder = null;
-  let enrollmentCreated = false;
   let checkoutSessionId = null;
 
   try {
@@ -205,103 +209,78 @@ export const createOrderFromCart = asyncHandler(async (req, res, next) => {
       userId,
       courses: orderCourses,
       total,
-      paymentMethod,
       cartId,
       enrollmentAttemptId: attemptId,
-      status: paymentMethod === "card" ? "awaiting_payment" : "completed",
-      paymentStatus: paymentMethod === "card" ? "pending" : "not_required",
+      status: "awaiting_payment",
+      paymentStatus: "pending",
     });
 
-    if (paymentMethod === "card") {
-      const user = await userModel.findById(userId);
-      if (!user) {
-        throw new Error("User not found", { cause: 404 });
-      }
-
-      const publicApiUrl = getPublicApiUrl(req);
-      const frontendReturnUrl = getFrontendReturnUrl(req);
-      const orderSession = await paymentFunction({
-        customer_email: user.email,
-        metadata: {
-          orderId: newOrder._id.toString(),
-          userId: userId.toString(),
-          ...(frontendReturnUrl
-            ? { frontendUrl: frontendReturnUrl }
-            : {}),
-        },
-        success_url:
-          `${publicApiUrl}/order/payment/success` +
-          `?session_id=${stripeSessionPlaceholder}`,
-        cancel_url:
-          `${publicApiUrl}/order/payment/cancel` +
-          `?session_id=${stripeSessionPlaceholder}`,
-        line_items: orderCourses.map((course) => ({
-          price_data: {
-            currency: "egp",
-            product_data: { name: course.title },
-            unit_amount: Math.round(course.price * 100),
-          },
-          quantity: 1,
-        })),
-        idempotencyKey: `checkout:${newOrder._id}`,
-      });
-      checkoutSessionId = orderSession.id;
-
-      newOrder.stripeSessionId = orderSession.id;
-      newOrder.checkoutExpiresAt = orderSession.expires_at
-        ? new Date(orderSession.expires_at * 1000)
-        : undefined;
-      await newOrder.save();
-
-      if (newOrder.checkoutExpiresAt) {
-        await courseEnrollmentLockModel.updateMany(
-          {
-            _id: { $in: lockIds },
-            attemptId,
-          },
-          {
-            expiresAt: newOrder.checkoutExpiresAt,
-          }
-        );
-      }
-
-      return res.status(201).json({
-        message: "Order created. Complete payment to enroll.",
-        order: newOrder,
-        checkoutUrl: orderSession.url,
-      });
+    const user = await userModel.findById(userId);
+    if (!user) {
+      throw new Error("User not found", { cause: 404 });
     }
 
-    await enrolledCoursesModel.create({
-      userid: userId,
-      courses: orderCourses.map((course) => ({
-        courseId: course.courseId,
-        selectedSchedule: course.selectedSchedule,
+    const publicApiUrl = getPublicApiUrl(req);
+    const frontendReturnUrl = getFrontendReturnUrl(req);
+    const orderSession = await paymentFunction({
+      customer_email: user.email,
+      metadata: {
+        orderId: newOrder._id.toString(),
+        userId: userId.toString(),
+        ...(frontendReturnUrl
+          ? { frontendUrl: frontendReturnUrl }
+          : {}),
+      },
+      success_url:
+        `${publicApiUrl}/order/payment/success` +
+        `?session_id=${stripeSessionPlaceholder}`,
+      cancel_url:
+        `${publicApiUrl}/order/payment/cancel` +
+        `?session_id=${stripeSessionPlaceholder}`,
+      line_items: orderCourses.map((course) => ({
+        price_data: {
+          currency: "egp",
+          product_data: { name: course.title },
+          unit_amount: Math.round(course.price * 100),
+        },
+        quantity: 1,
       })),
+      idempotencyKey: `checkout:${newOrder._id}`,
     });
-    enrollmentCreated = true;
+    checkoutSessionId = orderSession.id;
 
-    await cartModel.findByIdAndDelete(cartId);
+    newOrder.stripeSessionId = orderSession.id;
+    newOrder.checkoutExpiresAt = orderSession.expires_at
+      ? new Date(orderSession.expires_at * 1000)
+      : undefined;
+    await newOrder.save();
+
+    if (newOrder.checkoutExpiresAt) {
+      await courseEnrollmentLockModel.updateMany(
+        {
+          _id: { $in: lockIds },
+          attemptId,
+        },
+        {
+          expiresAt: newOrder.checkoutExpiresAt,
+        }
+      );
+    }
+
+    return res.status(201).json({
+      message: "Order created. Complete payment to enroll.",
+      order: formatCheckoutOrder(newOrder),
+      checkoutUrl: orderSession.url,
+    });
+  } catch (error) {
+    if (checkoutSessionId) {
+      await expireCheckoutSession(checkoutSessionId).catch(() => undefined);
+    }
     await courseEnrollmentLockModel.deleteMany({
       _id: { $in: lockIds },
       attemptId,
     });
-
-    return res.status(201).json({
-      message: "Order created successfully",
-      order: newOrder,
-    });
-  } catch (error) {
-    if (!enrollmentCreated) {
-      if (checkoutSessionId) {
-        await expireCheckoutSession(checkoutSessionId).catch(() => undefined);
-      }
-      await courseEnrollmentLockModel.deleteMany({
-        _id: { $in: lockIds },
-        attemptId,
-      });
-      if (newOrder) await orderModel.findByIdAndDelete(newOrder._id);
-    }
+    if (newOrder) await orderModel.findByIdAndDelete(newOrder._id);
 
     if (error?.code === 11000) {
       return res.status(409).json({

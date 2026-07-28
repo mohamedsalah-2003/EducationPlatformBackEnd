@@ -6,6 +6,8 @@ import * as order from './order.controller.js'
 import { isAuth } from '../../middelwares/auth.js'
 import { checkUser } from '../../middelwares/adminAuth.js'
 import { preventConcurrentRequests } from '../../middelwares/preventConcurrentRequests.js'
+import { validationCoreFunction } from '../../middelwares/validation.js'
+import { mutationSchemas } from '../../validation/apiSchemas.js'
 
 orderWebhookRouter.post(
   '/',
@@ -13,7 +15,7 @@ orderWebhookRouter.post(
   order.handleStripeWebhook
 )
 
-router.post('/', isAuth(), checkUser(), preventConcurrentRequests({
+router.post('/', isAuth(), checkUser(), validationCoreFunction(mutationSchemas.checkout), preventConcurrentRequests({
   operation: 'checkout',
   key: (req) => req.authuser._id,
   message: 'Checkout is already being processed',

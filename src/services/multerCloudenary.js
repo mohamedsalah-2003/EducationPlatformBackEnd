@@ -1,5 +1,6 @@
 import multer from "multer"
 import { allowedExtensions } from "../utils/allowedExtentions.js"
+import { AppError } from "../utils/errorHandeling.js"
 
 export const multercloudFunction = (allowedExtensionsArr) => {
   if (!allowedExtensionsArr) {
@@ -12,7 +13,14 @@ export const multercloudFunction = (allowedExtensionsArr) => {
     if (allowedExtensionsArr.includes(file.mimetype)) {
       return cb(null, true)
     }
-    cb(new Error('invalid extension', { cause: 400 }), false)
+    cb(
+      new AppError(
+        `Invalid file type "${file.mimetype}". Allowed types: ${allowedExtensionsArr.join(", ")}`,
+        400,
+        "INVALID_FILE_TYPE"
+      ),
+      false
+    )
   }
 
   const acceptsVideo = allowedExtensionsArr.some((type) => type.startsWith('video/'));
@@ -24,7 +32,8 @@ export const multercloudFunction = (allowedExtensionsArr) => {
     fileFilter,
     storage,
     limits: {
-      fileSize: maxFileSize
+      fileSize: maxFileSize,
+      files: 1,
     }
   })
 

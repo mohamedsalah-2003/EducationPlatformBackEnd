@@ -10,6 +10,15 @@ const fakeModel = (onFind) => ({
     onFind(filter);
 
     const query = {
+      sort() {
+        return query;
+      },
+      skip() {
+        return query;
+      },
+      limit() {
+        return query;
+      },
       populate() {
         return query;
       },
