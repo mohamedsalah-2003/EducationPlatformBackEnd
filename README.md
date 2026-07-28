@@ -9,7 +9,9 @@ Mongoose. No backend TypeScript is required.
 
 ## Contents
 
+- [Project links](#project-links)
 - [Architecture](#architecture)
+- [Database ERD](#database-erd)
 - [Features](#features)
 - [Technology](#technology)
 - [Requirements](#requirements)
@@ -26,6 +28,15 @@ Mongoose. No backend TypeScript is required.
 - [Deployment](#deployment)
 - [Production checklist](#production-checklist)
 - [Additional documentation](#additional-documentation)
+
+## Project links
+
+| Resource | URL |
+| --- | --- |
+| Production API | [education-platform-back-end.vercel.app](https://education-platform-back-end.vercel.app/) |
+| Backend repository | [mohamedsalah-2003/EducationPlatformBackEnd](https://github.com/mohamedsalah-2003/EducationPlatformBackEnd) |
+| Production frontend | [education-platform-omega.vercel.app](https://education-platform-omega.vercel.app/) |
+| Frontend repository | [mohamedsalah-2003/EducationPlatform](https://github.com/mohamedsalah-2003/EducationPlatform) |
 
 ## Architecture
 
@@ -54,6 +65,208 @@ The main request pipeline is configured in `src/initapp.js`:
 
 The Stripe webhook is registered before `express.json()`. Stripe signature
 verification requires the exact raw request body.
+
+## Database ERD
+
+The application uses MongoDB with Mongoose. Arrays such as course schedules,
+cart items, enrolled courses, and order items are embedded documents. The
+arrows below show application references stored as MongoDB ObjectIds.
+
+```mermaid
+erDiagram
+    USER {
+        ObjectId _id PK
+        string username
+        string email UK
+        string password
+        string gender
+        object profile_pic
+        string role
+        number tokenVersion
+        date createdAt
+        date updatedAt
+    }
+
+    COURSE {
+        ObjectId _id PK
+        ObjectId instructorId FK
+        string title UK
+        string description
+        number price
+        object imageurl
+        date createdAt
+        date updatedAt
+    }
+
+    COURSE_SCHEDULE {
+        string day
+        string time
+    }
+
+    LESSON {
+        ObjectId _id PK
+        ObjectId courseId FK
+        string title
+        string description
+        object video
+        object assignment
+        date createdAt
+        date updatedAt
+    }
+
+    FINAL_TEST {
+        ObjectId _id PK
+        ObjectId courseId FK
+        object file
+        date dueDate
+        date createdAt
+        date updatedAt
+    }
+
+    SUBMITTED_ASSIGNMENT {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId lessonId FK
+        ObjectId reviewerId FK
+        object file
+        number rating
+        string feedback
+        string status
+        date submittedAt
+    }
+
+    SUBMITTED_FINAL_TEST {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId finalTestId FK
+        ObjectId reviewerId FK
+        object file
+        number rating
+        string feedback
+        string status
+        date submittedAt
+    }
+
+    CART {
+        ObjectId _id PK
+        ObjectId userId FK
+        number total
+        date createdAt
+        date updatedAt
+    }
+
+    CART_ITEM {
+        ObjectId courseId FK
+        object schedule
+    }
+
+    ORDER {
+        ObjectId _id PK
+        ObjectId userId FK
+        ObjectId cartId FK
+        number total
+        string status
+        string paymentStatus
+        string stripeSessionId UK
+        string stripePaymentIntentId
+        date checkoutExpiresAt
+        date paidAt
+    }
+
+    ORDER_ITEM {
+        ObjectId courseId FK
+        string title
+        number price
+        object selectedSchedule
+    }
+
+    ENROLLED_COURSES {
+        ObjectId _id PK
+        ObjectId userid FK
+        date createdAt
+        date updatedAt
+    }
+
+    ENROLLMENT_ITEM {
+        ObjectId courseId FK
+        object selectedSchedule
+    }
+
+    COURSE_ENROLLMENT_LOCK {
+        string _id PK
+        ObjectId userId FK
+        ObjectId courseId FK
+        string attemptId
+        date expiresAt
+    }
+
+    REVOKED_TOKEN {
+        string _id PK
+        ObjectId userId FK
+        date expiresAt
+    }
+
+    LEGACY_SCHEDULE {
+        ObjectId _id PK
+        ObjectId courseId FK
+        string day
+        string time
+    }
+
+    API_RATE_LIMIT {
+        string _id PK
+        number count
+        date expiresAt
+    }
+
+    LOGIN_THROTTLE {
+        string _id PK
+        array attempts
+        date expiresAt
+    }
+
+    OPERATION_LOCK {
+        string _id PK
+        string attemptId
+        date expiresAt
+    }
+
+    USER o|--o{ COURSE : instructs
+    COURSE ||--o{ COURSE_SCHEDULE : embeds
+    COURSE ||--o{ LESSON : contains
+    COURSE ||--o| FINAL_TEST : has
+
+    USER ||--o{ SUBMITTED_ASSIGNMENT : submits
+    USER o|--o{ SUBMITTED_ASSIGNMENT : reviews
+    LESSON ||--o{ SUBMITTED_ASSIGNMENT : receives
+
+    USER ||--o{ SUBMITTED_FINAL_TEST : submits
+    USER o|--o{ SUBMITTED_FINAL_TEST : reviews
+    FINAL_TEST ||--o{ SUBMITTED_FINAL_TEST : receives
+
+    USER ||--o| CART : owns
+    CART ||--o{ CART_ITEM : embeds
+    COURSE ||--o{ CART_ITEM : selected_as
+    USER ||--o{ ORDER : places
+    CART o|--o{ ORDER : originates
+    ORDER ||--o{ ORDER_ITEM : embeds
+    COURSE ||--o{ ORDER_ITEM : purchased_as
+
+    USER ||--o{ ENROLLED_COURSES : owns
+    ENROLLED_COURSES ||--o{ ENROLLMENT_ITEM : embeds
+    COURSE ||--o{ ENROLLMENT_ITEM : grants_access
+
+    USER ||--o{ COURSE_ENROLLMENT_LOCK : reserves
+    COURSE ||--o{ COURSE_ENROLLMENT_LOCK : locked_for
+    USER ||--o{ REVOKED_TOKEN : invalidates
+    COURSE ||--o{ LEGACY_SCHEDULE : migrated_from
+```
+
+`LEGACY_SCHEDULE` represents the old standalone `Schedule` collection. Current
+course schedules are embedded in `Course.schedules`; the legacy collection is
+read by the relationship migration and cleaned during course deletion.
+`API_RATE_LIMIT`, `LOGIN_THROTTLE`, and `OPERATION_LOCK` are independent
+operational collections with TTL expiration.
 
 ## Features
 
